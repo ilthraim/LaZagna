@@ -1,0 +1,32 @@
+tasks_run/
+
+OpenFPGA/
+
+arch_files/2d_arch/*
+arch_files/3d_arch/*
+arch_files/3d_cb_arch/*
+
+base_rrg/*
+
+results/*
+
+rrg_3d/*
+
+# Ignore all .DS_Store files (macOS)
+.DS_Store
+
+# Ignore all .env files (useful for environment variables)
+.env
+
+# Ignore all log files
+*.log
+
+# Ignore compiled files (common for C, C++, or Java)
+*.o
+*.class
+
+# Ignore Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
