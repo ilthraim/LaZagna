@@ -1,4 +1,4 @@
-vpr ${VPR_ARCH_FILE} ${VPR_TESTBENCH_BLIF} --place_algorithm bounding_box --place_bounding_box_mode cube_bb --clock_modeling route --route_chan_width
+vpr ${VPR_ARCH_FILE} ${VPR_TESTBENCH_BLIF} --place_algorithm bounding_box --clock_modeling route --route_chan_width 300 --place_bounding_box_mode cube_bb --read_rr_graph /home/Ismael/3DFADE/task/designs/rr_graph.xml
 
 # Read OpenFPGA architecture definition
 #read_openfpga_arch -f ${OPENFPGA_ARCH_FILE}

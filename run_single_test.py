@@ -218,6 +218,21 @@ def remove_rr_graph_from_script(file_path):
                     line = ""  # If only "vpr" exists, remove the line entirely
             file.write(line)
 
+def remove_place_algorithm_from_script(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+    
+    with open(file_path, 'w') as file:
+        for line in lines:
+            if line.startswith("vpr"):
+                # Split the line into words, remove the last 2 word, and rejoin
+                words = line.rstrip('\n').split()
+                if len(words) > 1:
+                    line = " ".join(words[:-2]) + "\n"
+                else:
+                    line = ""  # If only "vpr" exists, remove the line entirely
+            file.write(line)
+
 def copy_results(original_dir, task_result_path, results_path, result_name, temp_dir=""):
     if not os.path.exists(original_dir + results_path):
         mkdir_command = ["mkdir", original_dir + results_path]
@@ -229,7 +244,7 @@ def copy_results(original_dir, task_result_path, results_path, result_name, temp
     
     run_command_in_temp_dir(command, original_dir)
 
-def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp_dir ="", type_sb="full", arch_path="", rrg_3d_path="", percent_connectivity=0.5):
+def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp_dir ="", type_sb="full", arch_path="", rrg_3d_path="", percent_connectivity=0.5, place_algorithm="cube_bb"):
     print(f"Temp Dir for benchmark {benchmark_name}: {temp_dir}")
 
     start_time = time.time()
@@ -242,8 +257,8 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
     # Now copy results into somewhere else maybe?
     # Feels a bit sketch should automate it so the reuslts are auto placed into nice named area but oh well
     task_result_path = "/run001/task_result.csv"
-    results_path = "/results/3d_" + type_sb + "_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent" + "/"
-    result_file_name = benchmark_name + "_results_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent" + ".csv"
+    results_path = "/results/3d_" + type_sb + "_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent_" + place_algorithm + "/"
+    result_file_name = benchmark_name + "_results_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent_" + place_algorithm + ".csv"
 
     print(f"\Trying to copy for benchmark {benchmark_name} the results to {original_dir + results_path + result_file_name} from {temp_dir + task_result_path}")
 
@@ -310,12 +325,35 @@ def update_config_simple(config_path, benchmark_blif, benchmark_name, benchmark_
     with open(config_path, 'w') as file:
         file.writelines(updated_lines)
 
-def run_one_benchmark(i, blif_file, verilog_file, act_file, original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5):
+def update_config_verilog(config_path, benchmark_verilog, benchmark_name):
+    
+    with open(config_path, 'r') as file:
+        lines = file.readlines()
+
+    updated_lines = []
+    for line in lines:
+        # Replace lines with the matching keys
+        if line.strip().startswith("bench0="):
+            updated_lines.append(f"bench0={benchmark_verilog}\n")
+        elif line.strip().startswith("bench0_top="):
+            updated_lines.append(f"bench0_top=top\n")
+        else:
+            updated_lines.append(line)
+
+    # Write the updated lines back to the file
+    with open(config_path, 'w') as file:
+        file.writelines(updated_lines)
+
+def output_file_name(benchmark_name, channel_width, width, height, percent_connectivity, place_algorithm, type_sb):
+    return 
+
+def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_dir="", width="", height="", channel_width="", type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False):
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_task_dir = os.path.join(temp_dir, "task")
         # copy config
         command = ["mkdir", temp_task_dir]
         run_command_in_temp_dir(command, original_dir)
+
 
         command = ["cp", "-r", original_dir + "/task/config", temp_task_dir + "/config"]
         run_command_in_temp_dir(command, original_dir)
@@ -332,19 +370,22 @@ def run_one_benchmark(i, blif_file, verilog_file, act_file, original_dir, width,
         command = ["cp", original_dir + "/task/design_variables.yml", temp_task_dir]
         run_command_in_temp_dir(command, original_dir)
 
-        update_config_simple(temp_task_dir + "/config/task.conf", blif_file, extract_file_name(blif_file), act_file, verilog_file)
+        if verilog_benchmarks:
+            update_config_verilog(temp_task_dir + "/config/task.conf", verilog_file, extract_file_name(verilog_file))
+        else:
+            update_config_simple(temp_task_dir + "/config/task.conf", blif_file, extract_file_name(blif_file), act_file, verilog_file)
 
-        print(f"Running Benchmark: {i} {extract_file_name(blif_file)} with Width: {width}, Height: {height}, Channel Width: {channel_width}")
+        print(f"Running Benchmark: {i} {extract_file_name(verilog_file)} with Width: {width}, Height: {height}, Channel Width: {channel_width}")
 
         start_time = time.time()
-        run_flow(original_dir=original_dir, width=width, height=height, channel_width=channel_width, benchmark_name=extract_file_name(blif_file), temp_dir=temp_task_dir, type_sb=type_sb, percent_connectivity=percent_connectivity)
+        run_flow(original_dir=original_dir, width=width, height=height, channel_width=channel_width, benchmark_name=extract_file_name(verilog_file), temp_dir=temp_task_dir, type_sb=type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm)
         end_time = time.time()
 
         elapsed_time_ms = (end_time - start_time) * 1000
-        print(f"\tBenchmark {extract_file_name(blif_file)} took {elapsed_time_ms:.2f} ms")
+        print(f"\tBenchmark {extract_file_name(verilog_file)} took {elapsed_time_ms:.2f} ms")
 
         # copy task folder for reference
-        command = ["cp", "-r", temp_task_dir, original_dir + "/tasks_run/task_" + extract_file_name(blif_file) + "_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent"]
+        command = ["cp", "-r", temp_task_dir, original_dir + "/tasks_run/task_" + extract_file_name(verilog_file) + "_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent"]
         run_command_in_temp_dir(command, original_dir)
 
 def append_rrg_to_script(script_path, rrg_path):
@@ -358,7 +399,20 @@ def append_rrg_to_script(script_path, rrg_path):
                 line = line.rstrip('\n') + " " + "--read_rr_graph " + rrg_path + "\n"
             file.write(line)
 
-def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5):
+def append_place_algorithm_to_script(script_path, place_algorithm="cube_bb"):
+    assert(place_algorithm == "cube_bb" or place_algorithm == "per_layer_bb")
+
+    with open(script_path, 'r') as file:
+        lines = file.readlines()
+
+    with open(script_path, 'w') as file:
+        for line in lines:
+            if line.startswith("vpr"):
+                # Append the string to the line
+                line = line.rstrip('\n') + " " + "--place_bounding_box_mode " + place_algorithm + "\n"
+            file.write(line)
+
+def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False):
     script_path ="/designs/bitstream_script.openfpga"
 
 
@@ -416,6 +470,13 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     run_time = (end_time - start_time) * 1000
     print(f"\tAdding Channel Width to execution script took {run_time:0.2f} ms")
 
+    start_time = time.time()
+    append_place_algorithm_to_script(original_dir + "/task" + script_path, place_algorithm)
+    end_time = time.time()
+
+    run_time = (end_time - start_time) * 1000
+    print(f"\tAdding Placement Algorithm to execution script took {run_time:0.2f} ms")
+
     rrg_path = "/base_rrg/rrg_cw_" + str(channel_width) + "_" + os.path.basename(relative_arch_path)
 
     rrg_3d_path = "/rrg_3d/rrg_3d_" + type_sb + "_cw_" + str(channel_width) + "_" + str(int(percent_connectivity * 100)) + "percent" + "_" + os.path.basename(relative_arch_path)
@@ -453,11 +514,19 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     # add the 3D RRG to the script
     append_rrg_to_script(original_dir + "/task" + script_path, original_dir + "/task/designs/rr_graph.xml")
 
+    if verilog_benchmarks:
+        command = ["cp", original_dir + "/task/config_templates/verilog_task.conf", original_dir + "/task/config/task.conf"]
+        run_command_in_temp_dir(command, original_dir)
+    else:
+        command = ["cp", original_dir + "/task/config_templates/blif_task.conf", original_dir + "/task/config/task.conf"]
+        run_command_in_temp_dir(command, original_dir)
+
 def cleanup_flow(original_dir):
     script_path ="/task/designs/bitstream_script.openfpga"
 
     start_time = time.time()
     remove_rr_graph_from_script(original_dir + script_path)
+    remove_place_algorithm_from_script(original_dir + script_path)
     remove_cw_from_script(original_dir + script_path)
     end_time = time.time()
 
@@ -465,22 +534,37 @@ def cleanup_flow(original_dir):
     print(f"\tCleaning Script took {run_time:0.2f} ms")
 
 def main():
-    percents_to_test = [1,0.8,0.6,0.4,0.2,0.1taqsks]
+    percents_to_test = [1,0.8,0.6,0.4,0.2,0.1]
 
-    for i in range(len(percents_to_test)):
+    place_algs = ["cube_bb", "per_layer_bb"]
+
+    for i in range(len(place_algs)):
         main_start_time = time.time()
 
         original_dir = os.getcwd()
 
-        blif_files = get_files_with_extension(original_dir + "/benchmarks", ".blif")
-        verilog_files = get_files_with_extension(original_dir + "/benchmarks", ".v")
-        act_files = get_files_with_extension(original_dir + "/benchmarks", ".act")
+        verilog_benchmarks = True # True if using verilog benchmarks, False if using blif benchmarks
+        benchmarks_dir = original_dir + "/benchmarks" + "/koios_proxy" # "/MCNC_benchmarks" or "/koios"
 
-        new_width = 10    # Set your desired width
-        new_height = 10   # Set your desired height
-        channel_width = 150
+        if verilog_benchmarks:
+            blif_files = get_files_with_extension(benchmarks_dir, ".v")
+            verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+            act_files = get_files_with_extension(benchmarks_dir, ".v")
+        else:
+            blif_files = get_files_with_extension(benchmarks_dir, ".blif")
+            verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+            act_files = get_files_with_extension(benchmarks_dir, ".act")
+
+
+
+        new_width = 40    # Set your desired width
+        new_height = 40   # Set your desired height
+        channel_width = 300
         type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
-        percent_connectivity = percents_to_test[i]
+        percent_connectivity = 1
+        place_algorithm = place_algs[i]
+
+        
         
 
         legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
@@ -488,16 +572,21 @@ def main():
             print(f"Invalid SB type: {type_sb}. Please choose from {legal_choices}")
             return
 
-        setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity)
+        setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks)
 
-        with ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity)
-                for i in range(len(blif_files))
-            ]
+        # Parallelized
+        # with ThreadPoolExecutor() as executor:
+        #     futures = [
+        #         executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
+        #         for i in range(len(blif_files))
+        #     ]
 
-            for future in futures:
-                future.result()
+        #     for future in futures:
+        #         future.result()
+
+        # Not parallelized
+        for i in range(len(blif_files)):
+            run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
         
         cleanup_flow(original_dir)
 
