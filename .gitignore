@@ -8,8 +8,6 @@ arch_files/3d_cb_arch/*
 
 base_rrg/*
 
-results/*
-
 rrg_3d/*
 
 # Ignore all .DS_Store files (macOS)
