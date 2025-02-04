@@ -5,7 +5,6 @@ import itertools
 import sys
 import os
 import operator
-from memory_profiler import profile
 import sqlite3
 import time
 from sizeof import total_size

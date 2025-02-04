@@ -1,7 +1,5 @@
 tasks_run/
 
-OpenFPGA/
-
 arch_files/2d_arch/*
 arch_files/3d_arch/*
 arch_files/3d_cb_arch/*

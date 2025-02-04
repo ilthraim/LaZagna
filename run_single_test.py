@@ -58,6 +58,9 @@ def run_command_in_temp_dir(command, original_dir, handle_error=True, verbose=Fa
 
 def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to_write_rrg="/base_rrg/rr_graph.xml", path_to_benchmark=and2_blif_path):
     
+    # Make sure the output directory exists
+    os.makedirs(os.path.dirname(original_dir + path_to_write_rrg), exist_ok=True)
+
     command = [original_dir + "/OpenFPGA/build/vtr-verilog-to-routing/vpr/vpr", 
                       original_dir + path_to_arch, 
                       original_dir + path_to_benchmark, 
@@ -78,6 +81,10 @@ def load_xml(file_path):
 
 def save_xml(tree, file_path):
     """Save the XML tree to a file."""
+
+    # Make sure the directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
     tree.write(file_path, pretty_print=True, xml_declaration=True, encoding='UTF-8')
 
 def set_fixed_layout_dimensions(root, width, height):
@@ -143,6 +150,10 @@ def add_new_layer(root, base_die=None):
 
 def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, type_sb="full", percent_connectivity=0.5):
     sb_type = "0" if type_sb == "full" else "1"
+
+    # Make sure the output directory exists
+    os.makedirs(os.path.dirname(original_dir + output_file_path), exist_ok=True)
+
     command = ["python3", 
                original_dir + "/scripts/3d_sb_creator.py",
                original_dir + base_arch_path,
@@ -261,6 +272,9 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
     result_file_name = benchmark_name + "_results_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent_" + place_algorithm + ".csv"
 
     print(f"\Trying to copy for benchmark {benchmark_name} the results to {original_dir + results_path + result_file_name} from {temp_dir + task_result_path}")
+
+    # Make sure the results directory exists
+    os.makedirs(original_dir + "/results", exist_ok=True)
 
     if os.path.exists(temp_dir + task_result_path):
         start_time = time.time()
@@ -384,6 +398,9 @@ def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_di
         elapsed_time_ms = (end_time - start_time) * 1000
         print(f"\tBenchmark {extract_file_name(verilog_file)} took {elapsed_time_ms:.2f} ms")
 
+        # Make sure tasks_run folder exists
+        os.makedirs(original_dir + "/tasks_run", exist_ok=True)
+
         # copy task folder for reference
         command = ["cp", "-r", temp_task_dir, original_dir + "/tasks_run/task_" + extract_file_name(verilog_file) + "_cw_" + str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent"]
         run_command_in_temp_dir(command, original_dir)
@@ -413,8 +430,12 @@ def append_place_algorithm_to_script(script_path, place_algorithm="cube_bb"):
             file.write(line)
 
 def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False):
-    script_path ="/designs/bitstream_script.openfpga"
+    
+    # copy template script to designs
+    command = ["cp", original_dir + "/task/config_templates/bitstream_script_template.openfpga", original_dir + "/task/designs/bitstream_script.openfpga"]
+    run_command_in_temp_dir(command, original_dir)
 
+    script_path ="/designs/bitstream_script.openfpga"
 
     if type_sb == "3d_cb":
         input_file = original_dir + "/arch_files/templates/vtr_3d_cb_arch.xml"     # Replace with your input file path
@@ -543,8 +564,8 @@ def main():
 
         original_dir = os.getcwd()
 
-        verilog_benchmarks = True # True if using verilog benchmarks, False if using blif benchmarks
-        benchmarks_dir = original_dir + "/benchmarks" + "/koios_proxy" # "/MCNC_benchmarks" or "/koios"
+        verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
+        benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" (need to retrieve)
 
         if verilog_benchmarks:
             blif_files = get_files_with_extension(benchmarks_dir, ".v")
@@ -557,15 +578,13 @@ def main():
 
 
 
-        new_width = 40    # Set your desired width
-        new_height = 40   # Set your desired height
-        channel_width = 300
+        new_width = 10    # Set your desired width
+        new_height = 10   # Set your desired height
+        channel_width = 100
         type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
         percent_connectivity = 1
         place_algorithm = place_algs[i]
 
-        
-        
 
         legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
         if type_sb not in legal_choices:    
@@ -575,18 +594,18 @@ def main():
         setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks)
 
         # Parallelized
-        # with ThreadPoolExecutor() as executor:
-        #     futures = [
-        #         executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
-        #         for i in range(len(blif_files))
-        #     ]
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
+                for i in range(len(blif_files))
+            ]
 
-        #     for future in futures:
-        #         future.result()
+            for future in futures:
+                future.result()
 
-        # Not parallelized
-        for i in range(len(blif_files)):
-            run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
+        # Serialized
+        # for i in range(len(blif_files)):
+        #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
         
         cleanup_flow(original_dir)
 
