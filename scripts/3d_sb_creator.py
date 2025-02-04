@@ -658,7 +658,7 @@ def create_sb(structure, is_combined=False):
     num_created = 0
 
     # For each location, find all relevant chans that either enter or exit th SB
-    for x, y in percentage_skip_2d_random(device_x, device_y, percent_connectitivty):
+    for x, y in percentage_skip_2d_deterministic(device_x, device_y, percent_connectitivty):
         num_created += 1
         print(f"Creating SB at location ({x}, {y})")
         iter_start_time = time.time()
