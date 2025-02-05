@@ -13,6 +13,7 @@ task/config/task.conf
 task/designs/*
 !task/designs/.gitkeep
 !task/designs/auto_sim_openfpga.xml
+!task/designs/openfpga_arch.xml
 
 results/*
 
