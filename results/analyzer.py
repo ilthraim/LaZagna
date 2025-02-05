@@ -255,10 +255,11 @@ for path in os.listdir(csvs_path):
 
 #get basename
 
+os.makedirs("./pngs", exist_ok=True)
 
 for path in results_paths:
-#     cartoony_plot_bar_with_gradient(path, name_index=0, value_index=2, output_file=f"pngs/{os.path.basename(path)}_average_net_length.png", plot_title="Average Net Length", x_label="Benchmark Name", y_label="")
-#     cartoony_plot_bar_with_gradient(path, name_index=0, value_index=12, output_file=f"pngs/{os.path.basename(path)}_total_wire_length.png", plot_title="Total Wire Length", x_label="Benchmark Name", y_label="")
+    cartoony_plot_bar_with_gradient(path, name_index=0, value_index=2, output_file=f"pngs/{os.path.basename(path)}_average_net_length.png", plot_title="Average Net Length", x_label="Benchmark Name", y_label="")
+    cartoony_plot_bar_with_gradient(path, name_index=0, value_index=12, output_file=f"pngs/{os.path.basename(path)}_total_wire_length.png", plot_title="Total Wire Length", x_label="Benchmark Name", y_label="")
 
     datas.append(pd.read_csv(path))
     labels.append(path)
@@ -294,9 +295,9 @@ selected_names = []
 
 for label, data in data_dict.items():
     names, average_net_length_values, total_wire_length_values, total_time_values = data
-    
+    print(label)
     # Example condition: Modify this according to your needs
-    if "percent" in label and "combined" in label and "15x15" in label:  # Only select data with certain string in the label
+    if "25x25" in label:  # Only select data with certain string in the label
         if selected_names == []:
             selected_names = names
         print(label, "selected")
@@ -305,6 +306,11 @@ for label, data in data_dict.items():
         selected_total_wire_length_values.append(total_wire_length_values)
         selected_total_time_values.append(total_time_values)
 
+print(selected_names)
+print(selected_labels)
+print(selected_average_net_length_values)
+print(selected_total_wire_length_values)
+print(selected_total_time_values)
 
 plot_grouped_bars(selected_names, values_list=selected_average_net_length_values, labels_list=selected_labels, output_file="average_net_length_compare.png", plot_title="Average Net Length Comparison", x_label="Benchmark Name", y_label="")
 plot_grouped_bars(selected_names, values_list=selected_total_wire_length_values, labels_list=selected_labels, output_file="total_wire_length_compare.png", plot_title="Total Wire Length Comparison", x_label="Benchmark Name", y_label="")

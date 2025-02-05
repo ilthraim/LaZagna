@@ -70,7 +70,7 @@
     </tile>
   </tiles>
   <layout>
-    <fixed_layout name="2x2" width="40" height="40">
+    <fixed_layout name="2x2" width="25" height="25">
         <layer die="0">
             <!--Perimeter of 'io' blocks with 'EMPTY' blocks at corners-->
             <perimeter type="io" priority="100"/>

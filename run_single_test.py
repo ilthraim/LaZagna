@@ -5,6 +5,7 @@ import shutil
 from lxml import etree
 import time
 from concurrent.futures import ThreadPoolExecutor
+import csv
 
 and2_blif_path = "/benchmarks/and2/and2.blif"
 
@@ -255,6 +256,19 @@ def copy_results(original_dir, task_result_path, results_path, result_name, temp
     
     run_command_in_temp_dir(command, original_dir)
 
+def generate_empty_results(original_dir, result_path, result_file_name, benchmark_name):
+    csv_headers = ["name", "TotalRunTime", "average_net_length", "clb_blocks", "critical_path", "io_blocks", "packing_time", "placement_time", "routing_time", "total_logic_block_area", "total_routing_area", "total_routing_time", "total_wire_length"]
+    csv_results = ["00_" + benchmark_name + "_Common", 0,0,0,0,0,0,0,0,0,0,0,0]
+
+    os.makedirs(os.path.dirname(original_dir + result_path), exist_ok=True)
+
+    with open(original_dir + result_path + result_file_name, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(csv_headers)  # Write headers
+        writer.writerow(csv_results)  # Write data
+
+
+
 def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp_dir ="", type_sb="full", arch_path="", rrg_3d_path="", percent_connectivity=0.5, place_algorithm="cube_bb"):
     print(f"Temp Dir for benchmark {benchmark_name}: {temp_dir}")
 
@@ -283,6 +297,13 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
 
         run_time = (end_time - start_time) * 1000
         print(f"\tCopying the results for benchmark {benchmark_name} to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
+    else:
+        start_time = time.time()
+        generate_empty_results(original_dir, results_path, result_file_name, benchmark_name)
+        end_time = time.time()
+
+        run_time = (end_time - start_time) * 1000
+        print(f"\tGenerating Empty Results file and writing to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
 
 def get_files_with_extension(directory, extension):
     """
@@ -555,65 +576,65 @@ def cleanup_flow(original_dir):
     print(f"\tCleaning Script took {run_time:0.2f} ms")
 
 def main():
-    percents_to_test = [1,0.8,0.6,0.4,0.2,0.1]
-
+    percents_to_test = [1, 0.75, 0.5, 0.25]
     place_algs = ["cube_bb", "per_layer_bb"]
 
-    for i in range(len(place_algs)):
-        main_start_time = time.time()
+    for j in range(len(percents_to_test)):
+        for i in range(len(place_algs)):
+            main_start_time = time.time()
 
-        original_dir = os.getcwd()
+            original_dir = os.getcwd()
 
-        verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
-        benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" (need to retrieve)
+            verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
+            benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" (need to retrieve)
 
-        if verilog_benchmarks:
-            blif_files = get_files_with_extension(benchmarks_dir, ".v")
-            verilog_files = get_files_with_extension(benchmarks_dir, ".v")
-            act_files = get_files_with_extension(benchmarks_dir, ".v")
-        else:
-            blif_files = get_files_with_extension(benchmarks_dir, ".blif")
-            verilog_files = get_files_with_extension(benchmarks_dir, ".v")
-            act_files = get_files_with_extension(benchmarks_dir, ".act")
-
-
-
-        new_width = 10    # Set your desired width
-        new_height = 10   # Set your desired height
-        channel_width = 100
-        type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
-        percent_connectivity = 1
-        place_algorithm = place_algs[i]
+            if verilog_benchmarks:
+                blif_files = get_files_with_extension(benchmarks_dir, ".v")
+                verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+                act_files = get_files_with_extension(benchmarks_dir, ".v")
+            else:
+                blif_files = get_files_with_extension(benchmarks_dir, ".blif")
+                verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+                act_files = get_files_with_extension(benchmarks_dir, ".act")
 
 
-        legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
-        if type_sb not in legal_choices:    
-            print(f"Invalid SB type: {type_sb}. Please choose from {legal_choices}")
-            return
 
-        setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks)
+            new_width = 25    # Set your desired width
+            new_height = 25   # Set your desired height
+            channel_width = 100
+            type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
+            percent_connectivity = percents_to_test[j]
+            place_algorithm = place_algs[i]
 
-        # Parallelized
-        with ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
-                for i in range(len(blif_files))
-            ]
 
-            for future in futures:
-                future.result()
+            legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
+            if type_sb not in legal_choices:    
+                print(f"Invalid SB type: {type_sb}. Please choose from {legal_choices}")
+                return
 
-        # Serialized
-        # for i in range(len(blif_files)):
-        #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
-        
-        cleanup_flow(original_dir)
+            setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks)
 
-        main_end_time = time.time()
+            # Parallelized
+            with ThreadPoolExecutor() as executor:
+                futures = [
+                    executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
+                    for i in range(len(blif_files))
+                ]
 
-        main_runtime = (main_end_time - main_start_time) * 1000
+                for future in futures:
+                    future.result()
 
-        print(f"\nRunning all tasks took: {main_runtime:.2f} ms")
+            # Serialized
+            # for i in range(len(blif_files)):
+            #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks)
+            
+            cleanup_flow(original_dir)
+
+            main_end_time = time.time()
+
+            main_runtime = (main_end_time - main_start_time) * 1000
+
+            print(f"\nRunning all tasks took: {main_runtime:.2f} ms")
 
 if __name__ == "__main__":
     main()
