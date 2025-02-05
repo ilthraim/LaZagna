@@ -97,7 +97,7 @@ def cartoony_plot_bar_with_gradient(csv_file, name_index=0, value_index=2, plot_
     bars = ax.bar(names, values, color=colors, edgecolor='black', linewidth=2, zorder=3)
 
     # Add a horizontal line for the average value
-    # ax.axhline(y=average_value, color='red', linestyle='--', linewidth=4, label=f'Average: {average_value:.2f}', zorder=4)
+    ax.axhline(y=average_value, color='red', linestyle='--', linewidth=4, label=f'Average: {average_value:.2f}', zorder=4)
     # ax.plot([0, len(names) - 1], [average_value, average_value], color='blue', linestyle='--', linewidth=1.5, marker='o', markersize=5, label=f'Average: {average_value:.2f}', zorder=4)
 
     # Add labels and title with a casual font
@@ -177,6 +177,14 @@ def plot_grouped_bars(names, values_list, labels_list, x_label="Names", y_label=
             shadow = FancyBboxPatch((bar.get_x(), 0), bar.get_width(), bar.get_height(),
                                     boxstyle="round,pad=0.1", linewidth=0, facecolor='gray', alpha=0.3, zorder=2)
             ax.add_patch(bar)
+
+    colors = ['red', 'blue', 'green', 'purple', 'orange', 'brown', 'pink', 'cyan', 'magenta', 'yellow']
+
+    # Add a horizontal line for the average value for each group
+    for i in range(len(values_list)):
+        average_value = np.mean(values_list[i])
+        ax.axhline(y=average_value, color=colors[i], linestyle='--', linewidth=4, label=f'Average: {average_value:.2f}', zorder=4)
+
 
     ax.set_ylim(0, max_y)
 
@@ -297,7 +305,7 @@ for label, data in data_dict.items():
     names, average_net_length_values, total_wire_length_values, total_time_values = data
     print(label)
     # Example condition: Modify this according to your needs
-    if "25x25" in label:  # Only select data with certain string in the label
+    if True:  # Only select data with certain string in the label
         if selected_names == []:
             selected_names = names
         print(label, "selected")

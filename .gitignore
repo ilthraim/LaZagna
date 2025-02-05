@@ -8,10 +8,11 @@ arch_files/3d_cb_arch/*
 
 base_rrg/*
 
-task/designs/rr_graph.xml
 task/config/task.conf
-task/designs/bitstream_script.openfpga
-task/designs/vtr_arch.xml
+
+task/designs/*
+!task/designs/.gitkeep
+!task/designs/auto_sim_openfpga.xml
 
 results/*
 

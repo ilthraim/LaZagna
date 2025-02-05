@@ -461,96 +461,40 @@ def create_full_sb(input_nodes, output_nodes, x, y):
 
     return new_nodes, new_edges
 
-def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer):
-    # need to figure out which nodes to connect together for larger than 2 CWs
-
-    # The way it works is by ptc, intially using a subset connection pattern for interlayer connections
-    # To do this need to find the appropriate nodes to connect together based on the ptc value
-    # For inputs:
-    #   - (x, y) CHANs have even ptc values starting from 0 and increasing
-    #   - (x + 1, y) & (x, y+1) CHANs have odd ptc values starting from 1 and increasing
-    # For outputs:
-    #   - (x, y) CHANs have odd ptc values starting from 1 and increasing
-    #   - (x + 1, y) & (x, y+1) CHANs have even ptc values starting from 0 and increasing
-
-    # need to connect for example: 
-    # inputs:
-    #   CHANX (x, y) with ptc: 0
-    #   CHANX (x + 1, y) with ptc: 1
-    #   CHANY (x, y) with ptc: 0
-    #   CHANY (x, y + 1) with ptc: 1
-    # outputs:
-    #   CHANX (x, y) with ptc: 1
-    #   CHANX (x + 1, y) with ptc: 0
-    #   CHANY (x, y) with ptc: 1
-    #   CHANY (x, y + 1) with ptc: 0
-
-    # First store the nodes in a list with increasing ptc values
-    x_y_chanx_input_nodes = []
-    x_y_chany_input_nodes = []
-    x_plus_1_y_chanx_input_nodes = []
-    x_y_plus_1_chany_input_nodes = []
-
-    x_y_chanx_output_nodes = []
-    x_y_chany_output_nodes = []
-    x_plus_1_y_chanx_output_nodes = []
-    x_y_plus_1_chany_output_nodes = []
-
-    for input_node in input_nodes:
+def sort_chan_nodes_by_direction(chan_nodes, x, y):
+    '''
+        Function to sort the chan nodes into the correct lists based on the location of the node
+    '''
+    x_y_chanx_chan_nodes = []
+    x_y_chany_chan_nodes = []
+    x_plus_1_y_chanx_chan_nodes = []
+    x_y_plus_1_chany_chan_nodes = []
+    
+    for input_node in chan_nodes:
         if input_node.xlow == str(x) and input_node.ylow == str(y):
             if input_node.type == "CHANX":
-                x_y_chanx_input_nodes.append(input_node)
+                x_y_chanx_chan_nodes.append(input_node)
             else:
-                x_y_chany_input_nodes.append(input_node)
+                x_y_chany_chan_nodes.append(input_node)
         elif input_node.xlow == str(x + 1) and input_node.ylow == str(y) and input_node.type == "CHANX":
-            x_plus_1_y_chanx_input_nodes.append(input_node)
+            x_plus_1_y_chanx_chan_nodes.append(input_node)
         elif input_node.xlow == str(x) and input_node.ylow == str(y + 1) and input_node.type == "CHANY":
-            x_y_plus_1_chany_input_nodes.append(input_node)
+            x_y_plus_1_chany_chan_nodes.append(input_node)
         else:
             print(f"ERROR: Input node is not in the correct location, node: {input_node}")
         
     #sort the nodes by ptc
-    x_y_chanx_input_nodes = sorted(x_y_chanx_input_nodes, key=lambda x: int(x.ptc))
-    x_y_chany_input_nodes = sorted(x_y_chany_input_nodes, key=lambda x: int(x.ptc))
-    x_plus_1_y_chanx_input_nodes = sorted(x_plus_1_y_chanx_input_nodes, key=lambda x: int(x.ptc))
-    x_y_plus_1_chany_input_nodes = sorted(x_y_plus_1_chany_input_nodes, key=lambda x: int(x.ptc))
+    x_y_chanx_chan_nodes = sorted(x_y_chanx_chan_nodes, key=lambda x: int(x.ptc))
+    x_y_chany_chan_nodes = sorted(x_y_chany_chan_nodes, key=lambda x: int(x.ptc))
+    x_plus_1_y_chanx_chan_nodes = sorted(x_plus_1_y_chanx_chan_nodes, key=lambda x: int(x.ptc))
+    x_y_plus_1_chany_chan_nodes = sorted(x_y_plus_1_chany_chan_nodes, key=lambda x: int(x.ptc))
 
-    for output_node in output_nodes:
-        if output_node.xlow == str(x) and output_node.ylow == str(y):
-            if output_node.type == "CHANX":
-                x_y_chanx_output_nodes.append(output_node)
-            else:
-                x_y_chany_output_nodes.append(output_node)
-        elif output_node.xlow == str(x + 1) and output_node.ylow == str(y) and output_node.type == "CHANX":
-            x_plus_1_y_chanx_output_nodes.append(output_node)
-        elif output_node.xlow == str(x) and output_node.ylow == str(y + 1) and output_node.type == "CHANY":
-            x_y_plus_1_chany_output_nodes.append(output_node)
-        else:
-            print(f"ERROR: Output node is not in the correct location, node: {output_node}")
-    
-    #sort the nodes by ptc
-    x_y_chanx_output_nodes = sorted(x_y_chanx_output_nodes, key=lambda x: int(x.ptc))
-    x_y_chany_output_nodes = sorted(x_y_chany_output_nodes, key=lambda x: int(x.ptc))
-    x_plus_1_y_chanx_output_nodes = sorted(x_plus_1_y_chanx_output_nodes, key=lambda x: int(x.ptc))
-    x_y_plus_1_chany_output_nodes = sorted(x_y_plus_1_chany_output_nodes, key=lambda x: int(x.ptc))
+    return x_y_chanx_chan_nodes, x_y_chany_chan_nodes, x_plus_1_y_chanx_chan_nodes, x_y_plus_1_chany_chan_nodes
 
-    assert len(x_y_chanx_input_nodes) == len(x_y_chanx_output_nodes)
-    assert len(x_y_chany_input_nodes) == len(x_y_chany_output_nodes)
-    assert len(x_plus_1_y_chanx_input_nodes) == len(x_plus_1_y_chanx_output_nodes)
-    assert len(x_y_plus_1_chany_input_nodes) == len(x_y_plus_1_chany_output_nodes)
-
-    # Now do a round robin connection between the input and output nodes
-    # take an input node from each list (if one exists) and store it in a new list to be sent to function
-    # maybe pop the elemnts from the list to keep track of which ones have been connected
-    # Do the same for the output nodes
-
-    # we will call connect_sb_nodes_combined for each set of input and output nodes
+def create_subset_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
     input_layer_none_nodes = []
     output_layer_none_nodes = []
     new_edges = []
-
-    max_len = max(len(x_y_chanx_input_nodes), len(x_y_chany_input_nodes), len(x_plus_1_y_chanx_input_nodes), len(x_y_plus_1_chany_input_nodes))
-
     for i in range(max_len):
 
         input_nodes_to_send = []
@@ -578,8 +522,84 @@ def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_laye
         input_layer_none_nodes += input_layer_none_nodes_temp
         output_layer_none_nodes += output_layer_none_nodes_temp
         new_edges += new_edges_temp
-
+    
     return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+def create_wilton_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
+    input_layer_none_nodes = []
+    output_layer_none_nodes = []
+    new_edges = []
+    for i in range(max_len):
+
+        input_nodes_to_send = []
+        output_nodes_to_send = []
+
+        if i < len(x_y_chanx_input_nodes):
+            input_nodes_to_send.append(x_y_chanx_input_nodes[i])
+        if i < len(x_y_chany_input_nodes):
+            input_nodes_to_send.append(x_y_chany_input_nodes[(i+1) % len(x_y_chany_input_nodes)])
+        if i < len(x_plus_1_y_chanx_input_nodes):
+            input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[(i+2) % len(x_plus_1_y_chanx_input_nodes)])
+        if i < len(x_y_plus_1_chany_input_nodes):
+            input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[(i+3) % len(x_y_plus_1_chany_input_nodes)])
+
+        if i < len(x_y_chanx_output_nodes):
+            output_nodes_to_send.append(x_y_chanx_output_nodes[i])
+        if i < len(x_y_chany_output_nodes):
+            output_nodes_to_send.append(x_y_chany_output_nodes[(i+1) % len(x_y_chany_output_nodes)])
+        if i < len(x_plus_1_y_chanx_output_nodes):
+            output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[(i+2) % len(x_plus_1_y_chanx_output_nodes)])
+        if i < len(x_y_plus_1_chany_output_nodes):
+            output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[(i+3) % len(x_y_plus_1_chany_output_nodes)])
+
+        input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(input_nodes_to_send, output_nodes_to_send, x, y, input_layer, output_layer)
+        input_layer_none_nodes += input_layer_none_nodes_temp
+        output_layer_none_nodes += output_layer_none_nodes_temp
+        new_edges += new_edges_temp
+    
+    return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer, connection_type="subset"):
+    # need to figure out which nodes to connect together for larger than 2 CWs
+
+    assert(connection_type == "subset" or connection_type == "wilton")
+
+    # The way it works is by ptc, intially using a subset connection pattern for interlayer connections
+    # To do this need to find the appropriate nodes to connect together based on the ptc value
+    # For inputs:
+    #   - (x, y) CHANs have even ptc values starting from 0 and increasing
+    #   - (x + 1, y) & (x, y+1) CHANs have odd ptc values starting from 1 and increasing
+    # For outputs:
+    #   - (x, y) CHANs have odd ptc values starting from 1 and increasing
+    #   - (x + 1, y) & (x, y+1) CHANs have even ptc values starting from 0 and increasing
+
+    # need to connect for example: 
+    # inputs:
+    #   CHANX (x, y) with ptc: 0
+    #   CHANX (x + 1, y) with ptc: 1
+    #   CHANY (x, y) with ptc: 0
+    #   CHANY (x, y + 1) with ptc: 1
+    # outputs:
+    #   CHANX (x, y) with ptc: 1
+    #   CHANX (x + 1, y) with ptc: 0
+    #   CHANY (x, y) with ptc: 1
+    #   CHANY (x, y + 1) with ptc: 0
+
+    # First store the nodes in a list with increasing ptc values
+    x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes = sort_chan_nodes_by_direction(input_nodes, x, y)
+    x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes = sort_chan_nodes_by_direction(output_nodes, x, y)
+
+    assert len(x_y_chanx_input_nodes) == len(x_y_chanx_output_nodes)
+    assert len(x_y_chany_input_nodes) == len(x_y_chany_output_nodes)
+    assert len(x_plus_1_y_chanx_input_nodes) == len(x_plus_1_y_chanx_output_nodes)
+    assert len(x_y_plus_1_chany_input_nodes) == len(x_y_plus_1_chany_output_nodes)
+
+    max_len = max(len(x_y_chanx_input_nodes), len(x_y_chany_input_nodes), len(x_plus_1_y_chanx_input_nodes), len(x_y_plus_1_chany_input_nodes))
+
+    if connection_type == "subset":
+        return create_subset_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
+    else:
+        return create_wilton_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
 
 def percentage_skip_2d_deterministic(grid_x, grid_y, percent):
     """
@@ -602,7 +622,6 @@ def percentage_skip_2d_deterministic(grid_x, grid_y, percent):
     # Select every `step`-th element
     for i in range(0, total_elements, step):
         yield all_coords[i]
-
 
 def percentage_skip_2d_random(grid_x, grid_y, percent):
     """
@@ -643,7 +662,7 @@ def percentage_skip_loop(iterable, percent):
             continue
         yield item
 
-def create_sb(structure, is_combined=False):
+def create_sb(structure, is_combined=False, connection_type="subset"):
     print("Creating SB connections")
     start_time = time.time()
     # loop over the device and find the highest CHAN x and y
@@ -675,8 +694,8 @@ def create_sb(structure, is_combined=False):
         # node_count_before = len(nodes_to_write)
         # edge_count_before = len(edges_to_write)
         if is_combined:
-            input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1)
-            input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0)
+            input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type)
+            input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type)
             nodes_to_write = nodes_to_write + input_layer_0_none_nodes + output_layer_1_none_nodes + input_layer_1_none_nodes + output_layer_0_none_nodes
             edges_to_write = edges_to_write + new_edges_0 + new_edges_1
         else:
@@ -750,8 +769,8 @@ def setup_ptc(structure):
     print(f"Setting up PTC array took { ((end_time - start_time) * 1000):0.2f} ms")
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python script.py <file_path> <output_file_path> <is_combined_sb> <percent_connectivity>")
+    if len(sys.argv) < 5:
+        print("Usage: python script.py <file_path> <output_file_path> <is_combined_sb[0:false, 1:true]> <percent_connectivity[float]> <connection_type[subset, wilton]>")
         sys.exit(1)
 
     start_time = time.time()
@@ -766,13 +785,15 @@ def main():
     global percent_connectitivty
     percent_connectitivty = float(sys.argv[4])
 
+    connection_type = sys.argv[5]
+
     print(f"Percent Connectivity: {percent_connectitivty}")
 
     print(f"Creating { 'combined' if is_combined_sb else 'full' } SBs for file {file_path}")
     structure, tree = read_structure(file_path)
     setup_ptc(structure)
     extract_nodes(structure)
-    create_sb(structure, is_combined_sb)
+    create_sb(structure, is_combined_sb, connection_type)
 
     tree.write(output_file_path, pretty_print=True, xml_declaration=True, encoding="UTF-8")
 
