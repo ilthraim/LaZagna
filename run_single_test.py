@@ -574,69 +574,81 @@ def cleanup_flow(original_dir):
     run_time = (end_time - start_time) * 1000
     print(f"\tCleaning Script took {run_time:0.2f} ms")
 
+
+ITD_paper_top_modules = [{"attention_layer.v":"attention_layer"},{ "bnn.v":"bnn"},{"bwave_like.fixed.large.v" :"NPU"},{"bwave_like.fixed.small.v" :"NPU"},
+                         {"clstm_like.large.v" :"C_LSTM_datapath"},{"clstm_like.medium.v" :"C_LSTM_datapath"},{"clstm_like.small.v" :"C_LSTM_datapath"}, 
+                        { "conv_layer_hls.v":"top"},{ "conv_layer.v":"conv_layer"},{"dla_like.medium.v" :"DLA"},{"dla_like.small.v" :"DLA"},
+                        {"dnnweaver.v" :"dnnweaver2_controller"}, {"eltwise_layer.v" :"eltwise_layer"},{"lenet.v" :"myproject"},
+                        {"lstm.v" :"top"},{"proxy.5.v" :"top"},{"proxy.7.v" :"top"}, 
+                        {"reduction_layer.v" :"reduction_layer"},{ "robot_rl.v":"robot_maze"},{"softmax.v" :"SoftMax"},{"spmv.v" :"spmv"},
+                        {"tdarknet_like.large.v" :"td_fused_top"},{"tpu_like.large.os.v" :"top"},{"tpu_like.large.ws.v" :"top"},{ "tpu_like.small.ws.v":"top"}]
+
 def main():
     percents_to_test = [1]
-    place_algs = ["cube_bb"]
-    connection_types = ["subset", "wilton"]
+    place_algs = ["per_layer_bb"]
+    connection_types = ["subset"]
+    # type_sbs = ["3d_cb", "2d", "3d_cb_out_only"]
 
-    for j in range(len(connection_types)):
-        for i in range(len(place_algs)):
-            main_start_time = time.time()
+    for k in range(len(percents_to_test)):
+        for j in range(len(connection_types)):
+            for i in range(len(place_algs)):
+                main_start_time = time.time()
 
-            original_dir = os.getcwd()
+                original_dir = os.getcwd()
 
-            verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
-            benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" (need to retrieve)
+                verilog_benchmarks = True # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
+                benchmarks_dir = original_dir + "/benchmarks" + "/ITD_paper" # "/MCNC_benchmarks" or "/koios" (need to retrieve)
 
-            if verilog_benchmarks:
-                blif_files = get_files_with_extension(benchmarks_dir, ".v")
-                verilog_files = get_files_with_extension(benchmarks_dir, ".v")
-                act_files = get_files_with_extension(benchmarks_dir, ".v")
-            else:
-                blif_files = get_files_with_extension(benchmarks_dir, ".blif")
-                verilog_files = get_files_with_extension(benchmarks_dir, ".v")
-                act_files = get_files_with_extension(benchmarks_dir, ".act")
-
-
-
-            new_width = 15    # Set your desired width
-            new_height = 15   # Set your desired height
-            channel_width = 100
-            type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
-            percent_connectivity = 1
-            place_algorithm = place_algs[i]
-
-            connection_type = connection_types[j] # "subset" or "wilton"
+                if verilog_benchmarks:
+                    blif_files = get_files_with_extension(benchmarks_dir, ".v")
+                    verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+                    act_files = get_files_with_extension(benchmarks_dir, ".v")
+                else:
+                    blif_files = get_files_with_extension(benchmarks_dir, ".blif")
+                    verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+                    act_files = get_files_with_extension(benchmarks_dir, ".act")
 
 
-            legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
-            if type_sb not in legal_choices:    
-                print(f"Invalid SB type: {type_sb}. Please choose from {legal_choices}")
-                return
 
-            setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks, connection_type=connection_type)
+                new_width = 200    # Set your desired width
+                new_height = 200   # Set your desired height
 
-            # Parallelized
-            with ThreadPoolExecutor() as executor:
-                futures = [
-                    executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type)
-                    for i in range(len(blif_files))
-                ]
+                channel_width = 500
+                type_sb = "2d" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
+                percent_connectivity = percents_to_test[k]
+                place_algorithm = place_algs[i]
 
-                for future in futures:
-                    future.result()
+                connection_type = connection_types[j] # "subset" or "wilton"
 
-            # Serialized
-            # for i in range(len(blif_files)):
-            #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type)
-            
-            cleanup_flow(original_dir)
 
-            main_end_time = time.time()
+                legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
+                if type_sb not in legal_choices:    
+                    print(f"Invalid SB type: {type_sb}. Please choose from {legal_choices}")
+                    return
 
-            main_runtime = (main_end_time - main_start_time) * 1000
+                setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks, connection_type=connection_type)
 
-            print(f"\nRunning all tasks took: {main_runtime:.2f} ms")
+                # Parallelized
+                with ThreadPoolExecutor() as executor:
+                    futures = [
+                        executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type)
+                        for i in range(len(blif_files))
+                    ]
+
+                    for future in futures:
+                        future.result()
+
+                # Serialized
+                # for i in range(len(blif_files)):
+                #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type)
+                
+                cleanup_flow(original_dir)
+
+                main_end_time = time.time()
+
+                main_runtime = (main_end_time - main_start_time) * 1000
+
+                print(f"\nRunning all tasks took: {main_runtime:.2f} ms")
 
 if __name__ == "__main__":
     main()

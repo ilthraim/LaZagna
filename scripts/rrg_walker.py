@@ -387,6 +387,8 @@ def main():
         print("Usage: python script.py <file_path>")
         sys.exit(1)
 
+    interlayer = False
+
     if len(sys.argv) == 3: #interlayer option
         if sys.argv[2] == "-i":
             interlayer = True
