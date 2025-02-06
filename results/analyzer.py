@@ -180,10 +180,24 @@ def plot_grouped_bars(names, values_list, labels_list, x_label="Names", y_label=
 
     colors = ['red', 'blue', 'green', 'purple', 'orange', 'brown', 'pink', 'cyan', 'magenta', 'yellow']
 
-    # Add a horizontal line for the average value for each group
+    # Add a horizontal line for the average value for each group and write the value to a CSV file
     for i in range(len(values_list)):
         average_value = np.mean(values_list[i])
-        ax.axhline(y=average_value, color=colors[i], linestyle='--', linewidth=4, label=f'Average: {average_value:.2f}', zorder=4)
+        ax.axhline(y=average_value, color=colors[i % len(colors)], linestyle='--', linewidth=4, label=f'{labels_list[i]} Average: {average_value:.2f}', zorder=4)
+
+    # Write the average values to a CSV file
+    with open(plot_title + 'average_values.csv', 'w') as f:
+        f.write('Label,Average\n')
+        for i in range(len(values_list)):
+            average_value = np.mean(values_list[i])
+            f.write(f'{labels_list[i]},{average_value:.2f}\n')
+
+        # Sort the values based on the average value in the CSV file
+        f.write('Sorted by Average\n\n')
+        sorted_values = sorted(zip(labels_list, [np.mean(values) for values in values_list]), key=lambda x: x[1])
+        for label, value in sorted_values:
+            f.write(f'{label},{value:.2f}\n')
+
 
 
     ax.set_ylim(0, max_y)
@@ -197,7 +211,7 @@ def plot_grouped_bars(names, values_list, labels_list, x_label="Names", y_label=
     plt.xticks(x, names, rotation=45, ha="right", fontsize=12, fontname='Roboto Condensed')
 
     # Add legend
-    ax.legend(loc='upper left', fontsize=12, frameon=False)
+    ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12, frameon=False)
 
     # Save the plot to a file
     plt.tight_layout()
@@ -266,8 +280,8 @@ for path in os.listdir(csvs_path):
 os.makedirs("./pngs", exist_ok=True)
 
 for path in results_paths:
-    cartoony_plot_bar_with_gradient(path, name_index=0, value_index=2, output_file=f"pngs/{os.path.basename(path)}_average_net_length.png", plot_title="Average Net Length", x_label="Benchmark Name", y_label="")
-    cartoony_plot_bar_with_gradient(path, name_index=0, value_index=12, output_file=f"pngs/{os.path.basename(path)}_total_wire_length.png", plot_title="Total Wire Length", x_label="Benchmark Name", y_label="")
+    # cartoony_plot_bar_with_gradient(path, name_index=0, value_index=2, output_file=f"pngs/{os.path.basename(path)}_average_net_length.png", plot_title="Average Net Length", x_label="Benchmark Name", y_label="")
+    # cartoony_plot_bar_with_gradient(path, name_index=0, value_index=12, output_file=f"pngs/{os.path.basename(path)}_total_wire_length.png", plot_title="Total Wire Length", x_label="Benchmark Name", y_label="")
 
     datas.append(pd.read_csv(path))
     labels.append(path)

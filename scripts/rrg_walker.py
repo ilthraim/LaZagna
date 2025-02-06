@@ -387,12 +387,33 @@ def main():
         print("Usage: python script.py <file_path>")
         sys.exit(1)
 
+    if len(sys.argv) == 3: #interlayer option
+        if sys.argv[2] == "-i":
+            interlayer = True
+        else:
+            interlayer = False
+    
+
+
     # Get the file path from the command-line argument
     file_path = sys.argv[1]
 
     root = read_structure(file_path)
     extract_nodes(root)
     extract_edges(root)
+
+    if (interlayer):
+
+        # Get file name
+        file_name = file_path.split("/")[-1]
+        file_name = file_name.split(".")[0]
+
+        #replace _ in name with -
+        file_name = file_name.replace("_", "-")
+
+        print(find_num_interlayer_edges())
+
+        sys.exit(0)
 
     print("\n##########################################################################################\n")
 

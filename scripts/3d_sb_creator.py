@@ -9,6 +9,7 @@ import sqlite3
 import time
 from sizeof import total_size
 import random
+import numpy as np
 
 node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc"])
 edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_layer"])
@@ -616,11 +617,10 @@ def percentage_skip_2d_deterministic(grid_x, grid_y, percent):
     all_coords = [(x, y) for x in range(grid_x + 1) for y in range(grid_y + 1)]
     total_elements = len(all_coords)
     
-    # Determine the step interval for selecting elements
-    step = int(1 / (percent))
+    true_count = round(total_elements * percent)
+    indices = np.linspace(0, total_elements - 1, true_count, dtype=int)
 
-    # Select every `step`-th element
-    for i in range(0, total_elements, step):
+    for i in indices:
         yield all_coords[i]
 
 def percentage_skip_2d_random(grid_x, grid_y, percent):
