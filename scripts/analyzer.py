@@ -97,7 +97,7 @@ def cartoony_plot_bar_with_gradient(csv_file, name_index=0, value_index=2, plot_
     bars = ax.bar(names, values, color=colors, edgecolor='black', linewidth=2, zorder=3)
 
     # Add a horizontal line for the average value
-    # ax.axhline(y=average_value, color='red', linestyle='--', linewidth=4, label=f'Average: {average_value:.2f}', zorder=4)
+    ax.axhline(y=average_value, color='red', linestyle='--', linewidth=4, label=f'Average: {average_value:.2f}', zorder=4)
     # ax.plot([0, len(names) - 1], [average_value, average_value], color='blue', linestyle='--', linewidth=1.5, marker='o', markersize=5, label=f'Average: {average_value:.2f}', zorder=4)
 
     # Add labels and title with a casual font
@@ -178,6 +178,28 @@ def plot_grouped_bars(names, values_list, labels_list, x_label="Names", y_label=
                                     boxstyle="round,pad=0.1", linewidth=0, facecolor='gray', alpha=0.3, zorder=2)
             ax.add_patch(bar)
 
+    colors = ['red', 'blue', 'green', 'purple', 'orange', 'brown', 'pink', 'cyan', 'magenta', 'yellow']
+
+    # Add a horizontal line for the average value for each group and write the value to a CSV file
+    for i in range(len(values_list)):
+        average_value = np.mean(values_list[i])
+        ax.axhline(y=average_value, color=colors[i % len(colors)], linestyle='--', linewidth=4, label=f'{labels_list[i]} Average: {average_value:.2f}', zorder=4)
+
+    # Write the average values to a CSV file
+    with open(plot_title + 'average_values.csv', 'w') as f:
+        f.write('Label,Average\n')
+        for i in range(len(values_list)):
+            average_value = np.mean(values_list[i])
+            f.write(f'{labels_list[i]},{average_value:.2f}\n')
+
+        # Sort the values based on the average value in the CSV file
+        f.write('Sorted by Average\n\n')
+        sorted_values = sorted(zip(labels_list, [np.mean(values) for values in values_list]), key=lambda x: x[1])
+        for label, value in sorted_values:
+            f.write(f'{label},{value:.2f}\n')
+
+
+
     ax.set_ylim(0, max_y)
 
     # Add labels and title with a casual font
@@ -189,7 +211,7 @@ def plot_grouped_bars(names, values_list, labels_list, x_label="Names", y_label=
     plt.xticks(x, names, rotation=45, ha="right", fontsize=12, fontname='Roboto Condensed')
 
     # Add legend
-    ax.legend(loc='upper left', fontsize=12, frameon=False)
+    ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize=12, frameon=False)
 
     # Save the plot to a file
     plt.tight_layout()
@@ -224,128 +246,138 @@ def extract_unique_parts(strings):
     ]
     return [part.replace("_", " ") for part in unique_parts]  # Convert underscores to spaces
 
+def create_grouped_csvs(original_path):
 
-rcParams['font.family'] = 'Roboto Condensed'
+    results_dir = os.path.abspath(os.path.join(original_path, "..", "results"))
 
-results_paths = []
+    for folder in results_dir:
+        if os.path.isdir(folder):
+            if folder == "results_csvs" or folder == "pngs":
+                continue
+            print(folder)
+            command = ["python3", os.path.abspath(os.path.join(results_dir, "csv_grouper.py")), folder]
+            os.system(" ".join(command))
 
-original_path = os.getcwd()
+            print(f"Data concatenated into ./results_csvs/{folder}_results.csv")
 
-for folder in os.listdir("./"):
-    if os.path.isdir(folder):
-        if folder == "results_csvs" or folder == "pngs":
-            continue
-        print(folder)
-        command = ["python3", original_path + "/csv_grouper.py", folder]
-        os.system(" ".join(command))
-        print(command)
+def main():
+    rcParams['font.family'] = 'Roboto Condensed'
 
-        print(f"Data concatenated into ./results_csvs/{folder}_results.csv")
+    results_paths = []
 
-        # results_paths.append(f"{folder}_results.csv")
+    original_path = os.path.dirname(os.path.abspath(__file__))
 
-datas = []
-labels = []
+    create_grouped_csvs(original_path)
 
-csvs_path = "./results_csvs"
+    datas = []
+    labels = []
 
-for path in os.listdir(csvs_path):
-    if path.endswith(".csv"):
-        results_paths.append(f"{csvs_path}/{path}")
+    csvs_path = os.path.abspath(os.path.join(original_path, "..", "results", "results_csvs"))
 
-#get basename
+    for path in os.listdir(csvs_path):
+        if path.endswith(".csv"):
+            results_paths.append(f"{csvs_path}/{path}")
 
+    #get basename
 
-for path in results_paths:
-#     cartoony_plot_bar_with_gradient(path, name_index=0, value_index=2, output_file=f"pngs/{os.path.basename(path)}_average_net_length.png", plot_title="Average Net Length", x_label="Benchmark Name", y_label="")
-#     cartoony_plot_bar_with_gradient(path, name_index=0, value_index=12, output_file=f"pngs/{os.path.basename(path)}_total_wire_length.png", plot_title="Total Wire Length", x_label="Benchmark Name", y_label="")
+    os.makedirs("./pngs", exist_ok=True)
 
-    datas.append(pd.read_csv(path))
-    labels.append(path)
+    for path in results_paths:
+        # cartoony_plot_bar_with_gradient(path, name_index=0, value_index=2, output_file=f"pngs/{os.path.basename(path)}_average_net_length.png", plot_title="Average Net Length", x_label="Benchmark Name", y_label="")
+        # cartoony_plot_bar_with_gradient(path, name_index=0, value_index=12, output_file=f"pngs/{os.path.basename(path)}_total_wire_length.png", plot_title="Total Wire Length", x_label="Benchmark Name", y_label="")
 
-#     print(f"Plots saved for {path}")
+        datas.append(pd.read_csv(path))
+        labels.append(path)
 
-labels = extract_unique_parts(labels)
+    #     print(f"Plots saved for {path}")
 
-#reorder each data frame to match the order of the names
-for data in datas:
-    data.sort_values(by='name', inplace=True)
+    labels = extract_unique_parts(labels)
 
-# Initialize a dictionary to hold the data
-data_dict = {}
+    #reorder each data frame to match the order of the names
+    for data in datas:
+        data.sort_values(by='name', inplace=True)
 
-# Populate the dictionary with data for each label
-for i, label in enumerate(labels):
-    # Extract the values for each metric based on name
-    names = datas[i].iloc[:, 0].tolist()
-    average_net_length_values = datas[i].iloc[:, 2].tolist()
-    total_wire_length_values = datas[i].iloc[:, 12].tolist()
-    total_time_values = datas[i].iloc[:, 1].tolist()
-    
-    # Store the data in the dictionary
-    data_dict[label] = [names, average_net_length_values, total_wire_length_values, total_time_values]
+    # Initialize a dictionary to hold the data
+    data_dict = {}
 
-# Now decide which labels and data to use for plotting based on some condition
-selected_labels = []
-selected_average_net_length_values = []
-selected_total_wire_length_values = []
-selected_total_time_values = []
-selected_names = []
+    # Populate the dictionary with data for each label
+    for i, label in enumerate(labels):
+        # Extract the values for each metric based on name
+        names = datas[i].iloc[:, 0].tolist()
+        average_net_length_values = datas[i].iloc[:, 2].tolist()
+        total_wire_length_values = datas[i].iloc[:, 12].tolist()
+        total_time_values = datas[i].iloc[:, 1].tolist()
+        
+        # Store the data in the dictionary
+        data_dict[label] = [names, average_net_length_values, total_wire_length_values, total_time_values]
 
-for label, data in data_dict.items():
-    names, average_net_length_values, total_wire_length_values, total_time_values = data
-    
-    # Example condition: Modify this according to your needs
-    if "percent" in label and "combined" in label and "20x20" and "1percent" not in label:  # Only select data with certain string in the label
-        if selected_names == []:
-            selected_names = names
-        print(label, "selected")
-        selected_labels.append(label)
-        selected_average_net_length_values.append(average_net_length_values)
-        selected_total_wire_length_values.append(total_wire_length_values)
-        selected_total_time_values.append(total_time_values)
+    # Now decide which labels and data to use for plotting based on some condition
+    selected_labels = []
+    selected_average_net_length_values = []
+    selected_total_wire_length_values = []
+    selected_total_time_values = []
+    selected_names = []
 
+    for label, data in data_dict.items():
+        names, average_net_length_values, total_wire_length_values, total_time_values = data
+        print(label)
+        # Example condition: Modify this according to your needs
+        if True:  # Only select data with certain string in the label
+            if selected_names == []:
+                selected_names = names
+            print(label, "selected")
+            selected_labels.append(label)
+            selected_average_net_length_values.append(average_net_length_values)
+            selected_total_wire_length_values.append(total_wire_length_values)
+            selected_total_time_values.append(total_time_values)
 
-plot_grouped_bars(selected_names, values_list=selected_average_net_length_values, labels_list=selected_labels, output_file="average_net_length_compare.png", plot_title="Average Net Length Comparison", x_label="Benchmark Name", y_label="")
-plot_grouped_bars(selected_names, values_list=selected_total_wire_length_values, labels_list=selected_labels, output_file="total_wire_length_compare.png", plot_title="Total Wire Length Comparison", x_label="Benchmark Name", y_label="")
-plot_grouped_bars(selected_names, values_list=selected_total_time_values, labels_list=selected_labels, output_file="total_time_compare.png", plot_title="Total Time Comparison", x_label="Benchmark Name", y_label="Total Time (s)")
+    print(selected_names)
+    print(selected_labels)
+    print(selected_average_net_length_values)
+    print(selected_total_wire_length_values)
+    print(selected_total_time_values)
 
-
-time_values = []
-wire_length_values = []
-average_net_values = []
-
-# print the mean for each label in each selected data
-for label, data in data_dict.items():
-    names, average_net_length_values, total_wire_length_values, total_time_values = data
-
-    cur_time_values = []
-    cur_wire_length_values = []
-    cur_average_net_length_values = []
-
-    if label in selected_labels:
-        cur_average_net_length_values.append(np.float64(np.mean(average_net_length_values)))
-        cur_wire_length_values.append(np.mean(total_wire_length_values))
-        cur_time_values.append(np.mean(total_time_values))
-
-        time_values.append(cur_time_values)
-        wire_length_values.append(cur_wire_length_values)
-        average_net_values.append(cur_average_net_length_values)
-
-#plot the average net length for each selected data
-
-time_label = ["Total Time"]
-wire_length_label = ["Total Wire Length"]
-average_net_length_label = ["Average Net Length"]
-
-print(time_values)
-print(wire_length_values)
-print(average_net_values)
+    plot_grouped_bars(selected_names, values_list=selected_average_net_length_values, labels_list=selected_labels, output_file="average_net_length_compare.png", plot_title="Average Net Length Comparison", x_label="Benchmark Name", y_label="")
+    plot_grouped_bars(selected_names, values_list=selected_total_wire_length_values, labels_list=selected_labels, output_file="total_wire_length_compare.png", plot_title="Total Wire Length Comparison", x_label="Benchmark Name", y_label="")
+    plot_grouped_bars(selected_names, values_list=selected_total_time_values, labels_list=selected_labels, output_file="total_time_compare.png", plot_title="Total Time Comparison", x_label="Benchmark Name", y_label="Total Time (s)")
 
 
-plot_grouped_bars(time_label, values_list=time_values, labels_list=selected_labels, output_file="time_mean_compare.png", plot_title="Total Time Comparison", x_label="Benchmark Name", y_label="Total Time (s)")
-plot_grouped_bars(wire_length_label, values_list=wire_length_values, labels_list=selected_labels, output_file="wire_length_mean_compare.png", plot_title="Total Wire Length Comparison", x_label="Benchmark Name", y_label="")
-plot_grouped_bars(average_net_length_label, values_list=average_net_values, labels_list=selected_labels, output_file="average_net_length_mean_compare.png", plot_title="Average Net Length Comparison", x_label="Benchmark Name", y_label="")
+    time_values = []
+    wire_length_values = []
+    average_net_values = []
+
+    # print the mean for each label in each selected data
+    for label, data in data_dict.items():
+        names, average_net_length_values, total_wire_length_values, total_time_values = data
+
+        cur_time_values = []
+        cur_wire_length_values = []
+        cur_average_net_length_values = []
+
+        if label in selected_labels:
+            cur_average_net_length_values.append(np.float64(np.mean(average_net_length_values)))
+            cur_wire_length_values.append(np.mean(total_wire_length_values))
+            cur_time_values.append(np.mean(total_time_values))
+
+            time_values.append(cur_time_values)
+            wire_length_values.append(cur_wire_length_values)
+            average_net_values.append(cur_average_net_length_values)
+
+    #plot the average net length for each selected data
+
+    time_label = ["Total Time"]
+    wire_length_label = ["Total Wire Length"]
+    average_net_length_label = ["Average Net Length"]
+
+    print(time_values)
+    print(wire_length_values)
+    print(average_net_values)
 
 
+    plot_grouped_bars(time_label, values_list=time_values, labels_list=selected_labels, output_file="time_mean_compare.png", plot_title="Total Time Comparison", x_label="Benchmark Name", y_label="Total Time (s)")
+    plot_grouped_bars(wire_length_label, values_list=wire_length_values, labels_list=selected_labels, output_file="wire_length_mean_compare.png", plot_title="Total Wire Length Comparison", x_label="Benchmark Name", y_label="")
+    plot_grouped_bars(average_net_length_label, values_list=average_net_values, labels_list=selected_labels, output_file="average_net_length_mean_compare.png", plot_title="Average Net Length Comparison", x_label="Benchmark Name", y_label="")
+
+if __name__ == "__main__":
+    main()
 # plot the average net length for each selected data

@@ -382,6 +382,20 @@ def find_num_interlayer_edges():
 
     return interlayer_edges
 
+def find_num_interlayer_nodes():
+    #If a node has a sink on a different layer, it is an interlayer node
+    # Keep interlyaer nodes in a set to avoid duplicates
+    interlayer_nodes_set = set()
+    for edge, edge_info in edge_data.items():
+        sink_node = edge_info.sink_node
+        sink_node_data = node_data[sink_node]
+
+        src_node = edge_info.src_node
+        node_info = node_data[src_node]
+        if sink_node_data.layer != node_info.layer and src_node not in interlayer_nodes_set:
+            interlayer_nodes_set.add(src_node)
+    return len(interlayer_nodes_set)
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python script.py <file_path>")
@@ -414,6 +428,7 @@ def main():
         file_name = file_name.replace("_", "-")
 
         print(find_num_interlayer_edges())
+        print(find_num_interlayer_nodes())
 
         sys.exit(0)
 

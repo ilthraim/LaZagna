@@ -20,7 +20,7 @@ def main():
     # Create a csv file to store the results
     csv_file = open("interlayer_contacts.csv", "w")
     csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(["File", "Interlayer contacts"])
+    csv_writer.writerow(["File", "Interlayer contacts", "Interlayer Nodes"])
 
     # Call rrg_walker.py for every file in the directory
     def process_file(filename):
@@ -31,11 +31,12 @@ def main():
             out = out.decode("utf-8")
             out = out.split("\n")
             interlayer_contacts = out[0]
+            interlayer_nodes = out[1]
             print("Done Processing", filename)
-            return filename, interlayer_contacts
+            return filename, interlayer_contacts, interlayer_nodes
         return None
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=16) as executor:
         futures = [executor.submit(process_file, filename) for filename in os.listdir(directory)]
         for future in futures:
             result = future.result()
