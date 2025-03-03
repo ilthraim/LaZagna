@@ -49,5 +49,5 @@ def extract_file_name(file_path):
     name_without_extension = os.path.splitext(base_name)[0]
     return name_without_extension
 
-def output_file_name(channel_width, width, height, percent_connectivity, place_algorithm,  connection_type):
-    return str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent_" + place_algorithm + "_" + connection_type
+def output_file_name(channel_width, width, height, percent_connectivity, place_algorithm,  connection_type, run_num=1):
+    return str(channel_width) + "_" + str(width) + "x" + str(height) + "_" + str(int(percent_connectivity * 100)) + "percent_" + place_algorithm + "_" + connection_type + "_run" + str(run_num)

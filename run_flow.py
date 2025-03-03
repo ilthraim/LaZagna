@@ -64,7 +64,7 @@ def run_task(original_dir, temp_dir=""):
     
     run_command_in_temp_dir(run_command, original_dir, handle_error=False, verbose=False)
 
-def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp_dir ="", type_sb="full", arch_path="", rrg_3d_path="", percent_connectivity=0.5, place_algorithm="cube_bb", connection_type="subset"):
+def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp_dir ="", type_sb="full", arch_path="", rrg_3d_path="", percent_connectivity=0.5, place_algorithm="cube_bb", connection_type="subset", run_num=1):
     print(f"Temp Dir for benchmark {benchmark_name}: {temp_dir}")
 
     start_time = time.time()
@@ -77,8 +77,8 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
     # Now copy results into somewhere else maybe?
     # Feels a bit sketch should automate it so the reuslts are auto placed into nice named area but oh well
     task_result_path = "/run001/task_result.csv"
-    results_path = "/results/3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type) + "/"
-    result_file_name = benchmark_name + "_results_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type) + ".csv"
+    results_path = "/results/3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num) + "/"
+    result_file_name = benchmark_name + "_results_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num) + ".csv"
 
     print(f"\Trying to copy for benchmark {benchmark_name} the results to {original_dir + results_path + result_file_name} from {temp_dir + task_result_path}")
 
@@ -100,7 +100,7 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
         run_time = (end_time - start_time) * 1000
         print(f"\tGenerating Empty Results file and writing to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
 
-def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False, connection_type="subset", arch_file=""):
+def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False, connection_type="subset", arch_file="", random_seed=1, run_num=1):
     
     # copy template script to designs
     command = ["cp", original_dir + "/task/config_templates/bitstream_script_template.openfpga", original_dir + "/task/designs/bitstream_script.openfpga"]
@@ -217,10 +217,13 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         command = ["cp", original_dir + "/task/config_templates/blif_task.conf", original_dir + "/task/config/task.conf"]
         run_command_in_temp_dir(command, original_dir)
 
+    #append random seed to script
+    append_random_seed_to_script(original_dir + "/task" + script_path, random_seed)
+
     # Make tasks_run directory
     #Output folder name based on parameters and time of run
     curr_time = time.strftime("%H:%M:%S", time.localtime())
-    folder_name = "3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type) + curr_time
+    folder_name = "3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num) + curr_time
     os.makedirs(original_dir + "/tasks_run/" + folder_name, exist_ok=True)
     return original_dir + "/tasks_run/" + folder_name
 
@@ -231,6 +234,7 @@ def cleanup_flow(original_dir):
     remove_rr_graph_from_script(original_dir + script_path)
     remove_place_algorithm_from_script(original_dir + script_path)
     remove_cw_from_script(original_dir + script_path)
+    remove_random_seed_from_script(original_dir + script_path)
     end_time = time.time()
 
     run_time = (end_time - start_time) * 1000
