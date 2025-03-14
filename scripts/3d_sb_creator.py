@@ -24,18 +24,42 @@ max_node_id = 0
 # Create an index for quick lookups
 node_index = defaultdict(list)
 
-ptc = defaultdict(int)
+ptc_counter = defaultdict(int)
 
 device_max_x = 0
 device_max_y = 0
 device_max_layer = 0
 
+def print_verbose(*args, **kwargs):
+    global verbose
+    if verbose:
+        print(*args, **kwargs)
+
 def add_node(node):
     node_data[node.id] = node
     if node.direction != "NONE":
-        key = (node.type, int(node.xlow), int(node.ylow), int(node.layer))
-        node_index[key].append(node)
+        x_low = int(node.xlow)
+        y_low = int(node.ylow)
+        x_high = int(node.xhigh)
+        y_high = int(node.yhigh)
 
+        if x_high == x_low and y_high == y_low:
+            key = (node.type, int(node.xlow), int(node.ylow), int(node.layer))
+            node_index[key].append(node)
+            return
+
+        if x_high != x_low:
+            x_range = x_high - x_low
+            for x in range (x_low, x_high + 1):
+                key = (node.type, x, y_low, int(node.layer))
+                node_index[key].append(node)
+            return
+        
+        y_range = y_high - y_low
+        for y in range (y_low, y_high + 1):
+            key = (node.type, x_low, y, int(node.layer))
+            node_index[key].append(node)
+        return
 
 def remove_node(node_id):
     node = node_data.pop(node_id, None)
@@ -45,7 +69,6 @@ def remove_node(node_id):
             node_index[key].remove(node)
             if not node_index[key]:
                 del node_index[key]
-
 
 def update_node(node):
     # Remove the old node entry if it exists
@@ -70,15 +93,15 @@ def read_structure(file_path, parser):
         tree = etree.parse(file_path, parser=parser)
         root = tree.getroot()
         end_time = time.time()
-        print(f"Reading XML file took { ((end_time - start_time) * 1000):0.2f} ms")
+        print_verbose(f"Reading XML file took { ((end_time - start_time) * 1000):0.2f} ms")
         return root, tree
 
     except Exception as e:
-        print(f"Error reading XML file: {e}")
+        print_verbose(f"Error reading XML file: {e}")
         return None
 
 def extract_nodes(root):
-    print(f"Extracting Nodes")
+    print_verbose(f"Extracting Nodes")
     start_time = time.time()
     rr_nodes = root.find("rr_nodes")
     
@@ -89,7 +112,7 @@ def extract_nodes(root):
         max_node_id = max(max_node_id, int(node_id))
 
         if int(node_id) % 100000 == 0:
-            print(f"\tProcessed {node_id} nodes")
+            print_verbose(f"\tProcessed {node_id} nodes")
 
         type = node.get("type")
 
@@ -106,27 +129,31 @@ def extract_nodes(root):
         side = loc.get("side")
         ptc_node = loc.get("ptc")
 
-        global ptc
-        key = (layer, xlow, ylow)
-        ptc[key] = max(ptc[key], int(ptc_node))
+        global ptc_counter
+        key = (int(layer), int(xlow), int(ylow))
+        ptc_counter[key] = max(1000, int(ptc_node))
 
         direction = node.get("direction")
 
         global device_max_layer, device_max_x, device_max_y
         device_max_layer = max(device_max_layer, int(layer))
         if type == "CHANX":
-            device_max_x = max(device_max_x, int(xlow))
+            device_max_x = max(device_max_x, int(xhigh))
         elif type == "CHANY":
-            device_max_y = max(device_max_y, int(ylow))
+            device_max_y = max(device_max_y, int(xhigh))
 
-        add_node(node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node))
+        segment = node.find("segment")
+        segment_id = segment.get("segment_id")
+        if segment_id == "0":
+            add_node(node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node))
 
     
     end_time = time.time()
-    print(f"Extracting all nodes took { ((end_time - start_time) * 1000):0.2f} ms")
+    print_verbose(f"max_node_id: {max_node_id}")
+    print_verbose(f"Extracting all nodes took { ((end_time - start_time) * 1000):0.2f} ms")
 
 def extract_edges(root):
-    print(f"Extracting Edges")
+    print_verbose(f"Extracting Edges")
     start_time = time.time()
     rr_edges = root.find("rr_edges")
     count = 0
@@ -136,7 +163,7 @@ def extract_edges(root):
         sink_node = edge.get("sink_node")
 
         if count % 1000000 == 0:
-            print(f"\tProcessed {count} edges")
+            print_verbose(f"\tProcessed {count} edges")
 
         if src_node not in node_data or sink_node not in node_data:
             continue
@@ -148,19 +175,16 @@ def extract_edges(root):
         sink_layer = sink_node_data.layer     
     
     end_time = time.time()
-    print(f"Extracting Edges took { ((end_time - start_time) * 1000):0.2f} ms")
-
+    print_verbose(f"Extracting Edges took { ((end_time - start_time) * 1000):0.2f} ms")
 
 def create_node(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node=0):
     new_node = node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node)
     add_node(new_node)
     return new_node
 
-
 def node_string(node: node_struct):
     ret = f"""<node capacity=\"1\" type=\"{node.type}\" id=\"{node.id}\" type=\"{node.type}\"><loc layer=\"{node.layer}\" ptc=\"0\" xhigh=\"{node.xhigh}\" xlow=\"{node.xlow}\" yhigh=\"{node.yhigh}\" ylow=\"{node.ylow}\"/>\n<timing C="0" R="0"/>\n<segment segment_id="0"/>\n</node>"""
     return ret
-
 
 NODE_TEMPLATE = '<node capacity="1" direction="{direction}" id="{id}" type="{type}"/>'
 LOC_TEMPLATE = '<loc layer="{layer}" ptc="{ptc}" xhigh="{xhigh}" xlow="{xlow}" yhigh="{yhigh}" ylow="{ylow}"/>'
@@ -168,17 +192,16 @@ TIMING_ELEMENT = etree.Element("timing", C="0", R="0")
 SEGMENT_ELEMENT = etree.Element("segment", segment_id="0")
 
 def node_xml_element(node):
-    global ptc
     
-    key = (node.layer, node.xlow, node.ylow)
-    ptc[key] += 1
+    # key = (node.layer, node.xlow, node.ylow)
+    # ptc[key] += 1
 
     # Create node using string template
     node_str = f'<node capacity="1" direction="{node.direction}" id="{node.id}" type="{node.type}"/>'
     new_node = etree.fromstring(node_str)
 
     # Create loc using string template
-    loc_str = f'<loc layer="{node.layer}" ptc="{ptc[key]}" xhigh="{node.xhigh}" xlow="{node.xlow}" yhigh="{node.yhigh}" ylow="{node.ylow}"/>'
+    loc_str = f'<loc layer="{node.layer}" ptc="{node.ptc}" xhigh="{node.xhigh}" xlow="{node.xlow}" yhigh="{node.yhigh}" ylow="{node.ylow}"/>'
     new_node.append(etree.fromstring(loc_str))
 
     timing = etree.Element("timing", C="0", R="0")
@@ -189,7 +212,6 @@ def node_xml_element(node):
     new_node.append(segment)
 
     return new_node
-
 
 def edge_string(edge: edge_struct):
     return f"""<edge sink_node=\"{edge.sink_node}\" src_node=\"{edge.sink_node}\" switch_id=\"0\"></edge>\n"""
@@ -205,40 +227,10 @@ def edge_xml_element(edge, switch_id="2"):
         )
     )
 
-
 def create_edge(src_node, sink_node, src_layer, sink_layer):
     new_edge = edge_struct(src_node, sink_node, src_layer, sink_layer)
     # add_edge((src_node, sink_node), new_edge)
     return new_edge
-
-def find_sb_nodes_one_way():
-    sb_driver_nodes = []
-    sb_sink_nodes = []
-    
-    # Define keys with integers
-    driver_keys = [
-        ("CHANX", "INC_DIR", 1, 1, 0),
-        ("CHANY", "INC_DIR", 1, 1, 0),
-        ("CHANX", "DEC_DIR", 2, 1, 0),
-        ("CHANY", "DEC_DIR", 1, 2, 0),
-    ]
-    
-    sink_keys = [
-        ("CHANX", "DEC_DIR", 1, 1, 1),
-        ("CHANY", "DEC_DIR", 1, 1, 1),
-        ("CHANX", "INC_DIR", 2, 1, 1),
-        ("CHANY", "INC_DIR", 1, 2, 1),
-    ]
-    
-    # Retrieve sb_driver_nodes
-    for key in driver_keys:
-        sb_driver_nodes.extend(node_index.get(key, []))
-    
-    # Retrieve sb_sink_nodes
-    for key in sink_keys:
-        sb_sink_nodes.extend(node_index.get(key, []))
-    
-    return sb_driver_nodes, sb_sink_nodes
 
 def find_chan_nodes(x, y):
     chan_nodes = []
@@ -256,7 +248,8 @@ def find_chan_nodes(x, y):
     for key in keys:
         chan_nodes.extend(node_index.get(key, []))
     
-    return chan_nodes
+    # Dumb to look at but this is just to remove any duplicates since if there's long wires they can appear at multiple different locations
+    return list(set(chan_nodes))
 
 def sort_chan_nodes_into_input_and_output(chan_nodes, x, y):
 
@@ -268,25 +261,65 @@ def sort_chan_nodes_into_input_and_output(chan_nodes, x, y):
 
     for node in chan_nodes:
         if node.layer == '1':
-            if node.direction == "INC_DIR" and node.xlow == str(x) and node.ylow == str(y):
-                layer_1_sb_input_nodes.append(node)
-            elif node.direction == "DEC_DIR" and ((node.xlow == str(x + 1) and node.ylow == str(y)) or (node.xlow == str(x) and node.ylow == str(y + 1))):
-                layer_1_sb_input_nodes.append(node)
-            elif node.direction == "DEC_DIR" and node.xlow == str(x) and node.ylow == str(y):
-                layer_1_sb_output_nodes.append(node)
-            elif node.direction == "INC_DIR" and ((node.xlow == str(x + 1) and node.ylow == str(y)) or (node.xlow == str(x) and node.ylow == str(y + 1))):
-                layer_1_sb_output_nodes.append(node)
-        else:
-            if node.direction == "INC_DIR" and node.xlow == str(x) and node.ylow == str(y):
-                layer_0_sb_input_nodes.append(node)
-            elif node.direction == "DEC_DIR" and ((node.xlow == str(x + 1) and node.ylow == str(y)) or (node.xlow == str(x) and node.ylow == str(y + 1))):
-                layer_0_sb_input_nodes.append(node)
-            elif node.direction == "DEC_DIR" and node.xlow == str(x) and node.ylow == str(y):
-                layer_0_sb_output_nodes.append(node)
-            elif node.direction == "INC_DIR" and ((node.xlow == str(x + 1) and node.ylow == str(y)) or (node.xlow == str(x) and node.ylow == str(y + 1))):
-                layer_0_sb_output_nodes.append(node)
+            if node.direction == "INC_DIR":
+                if (int(node.xlow) == int(x) + 1 and int(node.ylow) == int(y)) or (int(node.xlow) == int(x) and int(node.ylow) == int(y) + 1):
+                    layer_1_sb_output_nodes.append(node)
 
-    return layer_0_sb_input_nodes, layer_0_sb_output_nodes, layer_1_sb_input_nodes, layer_1_sb_output_nodes
+                elif int(node.xhigh) >= int(x) and int(node.yhigh) >=  int(y):
+                    layer_1_sb_input_nodes.append(node)
+
+                else:
+                    print_verbose(f"ERROR: {node} can't be classified as input or output at location X: {x} Y: {y}")
+                    exit(1)
+
+            elif node.direction == "DEC_DIR":
+                if int(node.xhigh) == int(x) and int(node.yhigh) == int(y):
+                    layer_1_sb_output_nodes.append(node)
+
+                elif (int(node.xlow) <= int(x) + 1 and int(node.ylow) == int(y)) or (int(node.xlow) == int(x) and int(node.ylow) <= int(y) + 1):
+                    layer_1_sb_input_nodes.append(node)
+
+                else:
+                    print_verbose(f"ERROR: {node} can't be classified as input or output at location X: {x} Y: {y}")
+                    exit(1)
+            
+            else:
+                print_verbose(f"ERROR: {node} can't be classified as input or output at location X: {x} Y: {y}")
+                exit(1)
+            
+            
+        else:
+
+            if node.direction == "INC_DIR":
+                if (int(node.xlow) == int(x) + 1 and int(node.ylow) == int(y)) or (int(node.xlow) == int(x) and int(node.ylow) == int(y) + 1):
+                    layer_0_sb_output_nodes.append(node)
+
+                elif int(node.xhigh) >= int(x) and int(node.yhigh) >=  int(y):
+                    layer_0_sb_input_nodes.append(node)
+
+                else:
+                    print_verbose(f"ERROR: {node} can't be classified as input or output at location X: {x} Y: {y}")
+                    exit(1)
+
+            elif node.direction == "DEC_DIR":
+                if int(node.xhigh) == int(x) and int(node.yhigh) == int(y):
+                    layer_0_sb_output_nodes.append(node)
+
+                elif (int(node.xlow) <= int(x) + 1 and int(node.ylow) == int(y)) or (int(node.xlow) == int(x) and int(node.ylow) <= int(y) + 1):
+                    layer_0_sb_input_nodes.append(node)
+
+                else:
+                    print_verbose(f"ERROR: {node} can't be classified as input or output at location X: {x} Y: {y}")
+                    exit(1)
+           
+            else:
+                print_verbose(f"ERROR: {node} can't be classified as input or output at location X: {x} Y: {y}")
+                exit(1)
+
+            
+
+    # A bit dumb to look at but this is just to remove any duplicates since if there's long wires they can appear at multiple different locations
+    return list(set(layer_0_sb_input_nodes)), list(set(layer_0_sb_output_nodes)), list(set(layer_1_sb_input_nodes)), list(set(layer_1_sb_output_nodes))
 
 def connect_sb_nodes_full(input_nodes, output_nodes):
     # global max_node_id
@@ -323,10 +356,16 @@ def connect_sb_nodes_combined(input_nodes, output_nodes, x, y, input_layer, outp
     new_edges = [None] * (len(input_nodes) + len(output_nodes) + 1)
     edge_idx = 0
 
-    max_node_id += 2
+    key = (int(input_layer), int(x), int(y))
+    ptc_val = ptc_counter[key]
+    ptc_val += 1
+    input_layer_none_nodes =[create_node(max_node_id + 1, "CHANX", input_layer, x, x, y, y, "", "NONE", ptc_val)]
+    ptc_val += 1
+    output_layer_none_nodes = [create_node(max_node_id + 2, "CHANX", output_layer, x, x, y, y, "", "NONE", ptc_val)]
 
-    output_layer_none_nodes = [create_node(max_node_id + 2, "CHANX", output_layer, x, x, y, y, "", "NONE")]
-    input_layer_none_nodes =[create_node(max_node_id + 1, "CHANX", input_layer, x, x, y, y, "", "NONE")]
+    ptc_counter[key] = ptc_val
+    
+    max_node_id += 2
 
     # connect the input nodes to the none node
     for input_node in input_nodes:
@@ -404,7 +443,7 @@ def create_full_sb(input_nodes, output_nodes, x, y):
         elif input_node.xlow == str(x) and input_node.ylow == str(y + 1) and input_node.type == "CHANY":
             x_y_plus_1_chany_input_nodes.append(input_node)
         else:
-            print(f"ERROR: Input node is not in the correct location, node: {input_node}")
+            print_verbose(f"ERROR: Input node is not in the correct location, node: {input_node}")
     
     for output_node in output_nodes:
         if output_node.xlow == str(x) and output_node.ylow == str(y):
@@ -417,7 +456,7 @@ def create_full_sb(input_nodes, output_nodes, x, y):
         elif output_node.xlow == str(x) and output_node.ylow == str(y + 1) and output_node.type == "CHANY":
             x_y_plus_1_chany_output_nodes.append(output_node)
         else:
-            print(f"ERROR: Output node is not in the correct location, node: {output_node}")
+            print_verbose(f"ERROR: Output node is not in the correct location, node: {output_node}")
     
     # Sort the nodes by ptc
     x_y_chanx_input_nodes = sorted(x_y_chanx_input_nodes, key=lambda x: int(x.ptc))
@@ -500,21 +539,57 @@ def sort_chan_nodes_by_direction(chan_nodes, x, y):
     x_y_plus_1_chany_chan_nodes_idx = 0
 
     for input_node in chan_nodes:
-        if input_node.xlow == str(x) and input_node.ylow == str(y):
-            if input_node.type == "CHANX":
-                x_y_chanx_chan_nodes[x_y_chanx_chan_nodes_idx] = input_node
-                x_y_chanx_chan_nodes_idx += 1
-            else:
-                x_y_chany_chan_nodes[x_y_chany_chan_nodes_idx] = input_node
-                x_y_chany_chan_nodes_idx += 1
-        elif input_node.xlow == str(x + 1) and input_node.ylow == str(y) and input_node.type == "CHANX":
-            x_plus_1_y_chanx_chan_nodes[x_plus_1_y_chanx_chan_nodes_idx] = input_node
-            x_plus_1_y_chanx_chan_nodes_idx += 1
-        elif input_node.xlow == str(x) and input_node.ylow == str(y + 1) and input_node.type == "CHANY":
-            x_y_plus_1_chany_chan_nodes[x_y_plus_1_chany_chan_nodes_idx] = input_node
-            x_y_plus_1_chany_chan_nodes_idx += 1
+
+        node_type = input_node.type
+        node_dir = input_node.direction
+        
+        if node_type == "CHANX":
+
+            # The only time a INC CHANX node is at location x plus 1 is when it's being driven, 
+            if node_dir == "INC_DIR":
+                if (int(input_node.xlow) == int(x) + 1 and int(input_node.ylow) == int(y)) or (int(input_node.xlow) == int(x) and int(input_node.ylow) == int(y) + 1):
+                    x_plus_1_y_chanx_chan_nodes[x_plus_1_y_chanx_chan_nodes_idx] = input_node
+                    x_plus_1_y_chanx_chan_nodes_idx += 1
+                else:
+                    x_y_chanx_chan_nodes[x_y_chanx_chan_nodes_idx] = input_node
+                    x_y_chanx_chan_nodes_idx += 1
+            
+            # The only time a DEC CHANX node is at location x is when it's being driven
+            elif node_dir == "DEC_DIR":
+                if int(input_node.xhigh) == int(x) and int(input_node.yhigh) == int(y):
+                    x_y_chanx_chan_nodes[x_y_chanx_chan_nodes_idx] = input_node
+                    x_y_chanx_chan_nodes_idx += 1
+                else:
+                    x_plus_1_y_chanx_chan_nodes[x_plus_1_y_chanx_chan_nodes_idx] = input_node
+                    x_plus_1_y_chanx_chan_nodes_idx += 1
+
+            else: 
+                print_verbose(f"ERROR: Input node is not in the correct location, node: {input_node}")
+
+        elif node_type == "CHANY":
+
+            # The only time a INC CHANY node is at location y plus 1 is when it's being driven,
+            if node_dir == "INC_DIR":
+                if (int(input_node.xlow) == int(x) + 1 and int(input_node.ylow) == int(y)) or (int(input_node.xlow) == int(x) and int(input_node.ylow) == int(y) + 1):
+                    x_y_plus_1_chany_chan_nodes[x_y_plus_1_chany_chan_nodes_idx] = input_node
+                    x_y_plus_1_chany_chan_nodes_idx += 1
+                else:
+                    x_y_chany_chan_nodes[x_y_chany_chan_nodes_idx] = input_node
+                    x_y_chany_chan_nodes_idx += 1
+
+            # The only time a DEC CHANY node is at location y is when it's being driven
+            elif node_dir == "DEC_DIR":
+                if int(input_node.xhigh) == int(x) and int(input_node.yhigh) == int(y):
+                    x_y_chany_chan_nodes[x_y_chany_chan_nodes_idx] = input_node
+                    x_y_chany_chan_nodes_idx += 1
+                else:
+                    x_y_plus_1_chany_chan_nodes[x_y_plus_1_chany_chan_nodes_idx] = input_node
+                    x_y_plus_1_chany_chan_nodes_idx += 1
+
+            else: 
+                print_verbose(f"ERROR: Input node is not in the correct location, node: {input_node}")
         else:
-            print(f"ERROR: Input node is not in the correct location, node: {input_node}")
+            print_verbose(f"ERROR: Input node is not in the correct location, node: {input_node}")
         
     #sort the nodes by ptc
     x_y_chanx_chan_nodes = sorted(x_y_chanx_chan_nodes[:x_y_chanx_chan_nodes_idx], key=lambda x: int(x.ptc))
@@ -524,45 +599,14 @@ def sort_chan_nodes_by_direction(chan_nodes, x, y):
 
     return x_y_chanx_chan_nodes, x_y_chany_chan_nodes, x_plus_1_y_chanx_chan_nodes, x_y_plus_1_chany_chan_nodes
 
-def create_subset_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
+def create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
     input_layer_none_nodes = []
     output_layer_none_nodes = []
     new_edges = []
 
-    for i in range(max_len):
-
-        input_nodes_to_send = []
-        output_nodes_to_send = []
-
-        if i < len(x_y_chanx_input_nodes):
-            input_nodes_to_send.append(x_y_chanx_input_nodes[i])
-        if i < len(x_y_chany_input_nodes):
-            input_nodes_to_send.append(x_y_chany_input_nodes[i])
-        if i < len(x_plus_1_y_chanx_input_nodes):
-            input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[i])
-        if i < len(x_y_plus_1_chany_input_nodes):
-            input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[i])
-
-        if i < len(x_y_chanx_output_nodes):
-            output_nodes_to_send.append(x_y_chanx_output_nodes[i])
-        if i < len(x_y_chany_output_nodes):
-            output_nodes_to_send.append(x_y_chany_output_nodes[i])
-        if i < len(x_plus_1_y_chanx_output_nodes):
-            output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[i])
-        if i < len(x_y_plus_1_chany_output_nodes):
-            output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[i])
-
-        input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(input_nodes_to_send, output_nodes_to_send, x, y, input_layer, output_layer)
-        input_layer_none_nodes.extend(input_layer_none_nodes_temp)
-        output_layer_none_nodes.extend(output_layer_none_nodes_temp)
-        new_edges.extend(new_edges_temp)
-    
-    return input_layer_none_nodes, output_layer_none_nodes, new_edges
-
-def create_wilton_2_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
-    input_layer_none_nodes = []
-    output_layer_none_nodes = []
-    new_edges = []
+    # If there are no outputs then there is no wya to create a 3D SB at a given location
+    if len(x_y_chanx_output_nodes) == 0 and len(x_y_chany_output_nodes) == 0 and len(x_plus_1_y_chanx_output_nodes) == 0 and len(x_y_plus_1_chany_output_nodes) == 0:
+        return input_layer_none_nodes, output_layer_none_nodes, new_edges
 
     x_y_chanx_input_nodes_len = len(x_y_chanx_input_nodes)
     x_y_chany_input_nodes_len = len(x_y_chany_input_nodes)
@@ -574,26 +618,125 @@ def create_wilton_2_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_i
     x_plus_1_y_chanx_output_nodes_len = len(x_plus_1_y_chanx_output_nodes)
     x_y_plus_1_chany_output_nodes_len = len(x_y_plus_1_chany_output_nodes)
 
-    for i in range(max_len):
+    for i in range(max_output_len):
+
         input_nodes_to_send = []
         output_nodes_to_send = []
 
-        if i < x_y_chanx_input_nodes_len:
+        if 0 < x_y_chanx_input_nodes_len:
             input_nodes_to_send.append(x_y_chanx_input_nodes[i])
-        if i < x_y_chany_input_nodes_len:
+        if 0 < x_y_chany_input_nodes_len:
             input_nodes_to_send.append(x_y_chany_input_nodes[i])
-        if i < x_plus_1_y_chanx_input_nodes_len:
+        if 0 < x_plus_1_y_chanx_input_nodes_len:
             input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[i])
-        if i < x_y_plus_1_chany_input_nodes_len:
+        if 0 < x_y_plus_1_chany_input_nodes_len:
             input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[i])
 
-        if i < x_y_chanx_output_nodes_len:
+        if 0 < x_y_chanx_output_nodes_len:
+            output_nodes_to_send.append(x_y_chanx_output_nodes[i])
+        if 0 < x_y_chany_output_nodes_len:
+            output_nodes_to_send.append(x_y_chany_output_nodes[i])
+        if 0 < x_plus_1_y_chanx_output_nodes_len:
+            output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[i])
+        if 0 < x_y_plus_1_chany_output_nodes_len:
+            output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[i])
+
+        input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(input_nodes_to_send, output_nodes_to_send, x, y, input_layer, output_layer)
+        input_layer_none_nodes.extend(input_layer_none_nodes_temp)
+        output_layer_none_nodes.extend(output_layer_none_nodes_temp)
+        new_edges.extend(new_edges_temp)
+    
+    return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+def create_wilton_3_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
+    input_layer_none_nodes = []
+    output_layer_none_nodes = []
+    new_edges = []
+
+    # If there are no outputs then there is no wya to create a 3D SB at a given location
+    if len(x_y_chanx_output_nodes) == 0 and len(x_y_chany_output_nodes) == 0 and len(x_plus_1_y_chanx_output_nodes) == 0 and len(x_y_plus_1_chany_output_nodes) == 0:
+        return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+    x_y_chanx_input_nodes_len = len(x_y_chanx_input_nodes)
+    x_y_chany_input_nodes_len = len(x_y_chany_input_nodes)
+    x_plus_1_y_chanx_input_nodes_len = len(x_plus_1_y_chanx_input_nodes)
+    x_y_plus_1_chany_input_nodes_len = len(x_y_plus_1_chany_input_nodes)
+
+    x_y_chanx_output_nodes_len = len(x_y_chanx_output_nodes)
+    x_y_chany_output_nodes_len = len(x_y_chany_output_nodes)
+    x_plus_1_y_chanx_output_nodes_len = len(x_plus_1_y_chanx_output_nodes)
+    x_y_plus_1_chany_output_nodes_len = len(x_y_plus_1_chany_output_nodes)
+
+    for i in range(max_output_len):
+        input_nodes_to_send = []
+        output_nodes_to_send = []
+
+        if 0 < x_y_chanx_input_nodes_len:
+            input_nodes_to_send.append(x_y_chanx_input_nodes[i])
+        if 0 < x_y_chany_input_nodes_len:
+            input_nodes_to_send.append(x_y_chany_input_nodes[i])
+        if 0 < x_plus_1_y_chanx_input_nodes_len:
+            input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[i])
+        if 0 < x_y_plus_1_chany_input_nodes_len:
+            input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[i])
+
+        if 0 < x_y_chanx_output_nodes_len:
             output_nodes_to_send.append(x_y_chanx_output_nodes[(i+1) % x_y_chanx_output_nodes_len])
-        if i < x_y_chany_output_nodes_len:
+        if 0 < x_y_chany_output_nodes_len:
+            output_nodes_to_send.append(x_y_chany_output_nodes[(i+1) % x_y_chany_output_nodes_len])
+        if 0 < x_plus_1_y_chanx_output_nodes_len:
+            output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[(i+1) % x_plus_1_y_chanx_output_nodes_len])
+        if 0 < x_y_plus_1_chany_output_nodes_len:
+            output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[(i+1) % x_y_plus_1_chany_output_nodes_len])
+
+        input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(
+            input_nodes_to_send, output_nodes_to_send, x, y, input_layer, output_layer)
+        
+        input_layer_none_nodes.extend(input_layer_none_nodes_temp)
+        output_layer_none_nodes.extend(output_layer_none_nodes_temp)
+        new_edges.extend(new_edges_temp)
+    
+    return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+def create_wilton_2_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
+    input_layer_none_nodes = []
+    output_layer_none_nodes = []
+    new_edges = []
+
+    # If there are no outputs then there is no wya to create a 3D SB at a given location
+    if len(x_y_chanx_output_nodes) == 0 and len(x_y_chany_output_nodes) == 0 and len(x_plus_1_y_chanx_output_nodes) == 0 and len(x_y_plus_1_chany_output_nodes) == 0:
+        return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+    x_y_chanx_input_nodes_len = len(x_y_chanx_input_nodes)
+    x_y_chany_input_nodes_len = len(x_y_chany_input_nodes)
+    x_plus_1_y_chanx_input_nodes_len = len(x_plus_1_y_chanx_input_nodes)
+    x_y_plus_1_chany_input_nodes_len = len(x_y_plus_1_chany_input_nodes)
+
+    x_y_chanx_output_nodes_len = len(x_y_chanx_output_nodes)
+    x_y_chany_output_nodes_len = len(x_y_chany_output_nodes)
+    x_plus_1_y_chanx_output_nodes_len = len(x_plus_1_y_chanx_output_nodes)
+    x_y_plus_1_chany_output_nodes_len = len(x_y_plus_1_chany_output_nodes)
+
+    for i in range(max_output_len):
+        input_nodes_to_send = []
+        output_nodes_to_send = []
+
+        if 0 < x_y_chanx_input_nodes_len:
+            input_nodes_to_send.append(x_y_chanx_input_nodes[i % x_y_chanx_input_nodes_len])
+        if 0 < x_y_chany_input_nodes_len:
+            input_nodes_to_send.append(x_y_chany_input_nodes[i % x_y_chany_input_nodes_len] )
+        if 0 < x_plus_1_y_chanx_input_nodes_len:
+            input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[i % x_plus_1_y_chanx_input_nodes_len] )
+        if 0 < x_y_plus_1_chany_input_nodes_len:
+            input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[i % x_y_plus_1_chany_input_nodes_len] )
+
+        if 0 < x_y_chanx_output_nodes_len:
+            output_nodes_to_send.append(x_y_chanx_output_nodes[(i+1) % x_y_chanx_output_nodes_len])
+        if 0 < x_y_chany_output_nodes_len:
             output_nodes_to_send.append(x_y_chany_output_nodes[(i+2) % x_y_chany_output_nodes_len])
-        if i < x_plus_1_y_chanx_output_nodes_len:
+        if 0 < x_plus_1_y_chanx_output_nodes_len:
             output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[(i+3) % x_plus_1_y_chanx_output_nodes_len])
-        if i < x_y_plus_1_chany_output_nodes_len:
+        if 0 < x_y_plus_1_chany_output_nodes_len:
             output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[(i+4) % x_y_plus_1_chany_output_nodes_len])
 
         input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(
@@ -605,31 +748,46 @@ def create_wilton_2_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_i
     
     return input_layer_none_nodes, output_layer_none_nodes, new_edges
 
-def create_wilton_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
+def create_wilton_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
     input_layer_none_nodes = []
     output_layer_none_nodes = []
     new_edges = []
-    for i in range(max_len):
+
+    # If there are no outputs then there is no wya to create a 3D SB at a given location
+    if len(x_y_chanx_output_nodes) == 0 and len(x_y_chany_output_nodes) == 0 and len(x_plus_1_y_chanx_output_nodes) == 0 and len(x_y_plus_1_chany_output_nodes) == 0:
+        return input_layer_none_nodes, output_layer_none_nodes, new_edges
+
+    x_y_chanx_input_nodes_len = len(x_y_chanx_input_nodes)
+    x_y_chany_input_nodes_len = len(x_y_chany_input_nodes)
+    x_plus_1_y_chanx_input_nodes_len = len(x_plus_1_y_chanx_input_nodes)
+    x_y_plus_1_chany_input_nodes_len = len(x_y_plus_1_chany_input_nodes)
+
+    x_y_chanx_output_nodes_len = len(x_y_chanx_output_nodes)
+    x_y_chany_output_nodes_len = len(x_y_chany_output_nodes)
+    x_plus_1_y_chanx_output_nodes_len = len(x_plus_1_y_chanx_output_nodes)
+    x_y_plus_1_chany_output_nodes_len = len(x_y_plus_1_chany_output_nodes)
+
+    for i in range(max_output_len):
 
         input_nodes_to_send = []
         output_nodes_to_send = []
 
-        if i < len(x_y_chanx_input_nodes):
+        if 0 < x_y_chanx_input_nodes_len:
             input_nodes_to_send.append(x_y_chanx_input_nodes[i])
-        if i < len(x_y_chany_input_nodes):
+        if 0 < x_y_chany_input_nodes_len:
             input_nodes_to_send.append(x_y_chany_input_nodes[(i+1) % len(x_y_chany_input_nodes)])
-        if i < len(x_plus_1_y_chanx_input_nodes):
+        if 0 < x_plus_1_y_chanx_input_nodes_len:
             input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[(i+2) % len(x_plus_1_y_chanx_input_nodes)])
-        if i < len(x_y_plus_1_chany_input_nodes):
+        if 0 < x_y_plus_1_chany_input_nodes_len:
             input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[(i+3) % len(x_y_plus_1_chany_input_nodes)])
 
-        if i < len(x_y_chanx_output_nodes):
+        if 0 < x_y_chanx_output_nodes_len:
             output_nodes_to_send.append(x_y_chanx_output_nodes[i])
-        if i < len(x_y_chany_output_nodes):
+        if 0 < x_y_chany_output_nodes_len:
             output_nodes_to_send.append(x_y_chany_output_nodes[(i+1) % len(x_y_chany_output_nodes)])
-        if i < len(x_plus_1_y_chanx_output_nodes):
+        if 0 < x_plus_1_y_chanx_output_nodes_len:
             output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[(i+2) % len(x_plus_1_y_chanx_output_nodes)])
-        if i < len(x_y_plus_1_chany_output_nodes):
+        if 0 < x_y_plus_1_chany_output_nodes_len:
             output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[(i+3) % len(x_y_plus_1_chany_output_nodes)])
 
         input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(input_nodes_to_send, output_nodes_to_send, x, y, input_layer, output_layer)
@@ -639,10 +797,10 @@ def create_wilton_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_inp
     
     return input_layer_none_nodes, output_layer_none_nodes, new_edges
 
-def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer, connection_type="subset"):
+def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer, connection_type="subset", vertical_connectivity_percentage=1):
     # need to figure out which nodes to connect together for larger than 2 CWs
 
-    accepted_connection_types = ["subset", "wilton", "wilton_2"]
+    accepted_connection_types = ["subset", "wilton", "wilton_2", "wilton_3"]
 
     assert(connection_type in accepted_connection_types)
 
@@ -669,21 +827,50 @@ def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_laye
 
     # First store the nodes in a list with increasing ptc values
     x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes = sort_chan_nodes_by_direction(input_nodes, x, y)
+
     x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes = sort_chan_nodes_by_direction(output_nodes, x, y)
 
-    assert len(x_y_chanx_input_nodes) == len(x_y_chanx_output_nodes)
-    assert len(x_y_chany_input_nodes) == len(x_y_chany_output_nodes)
-    assert len(x_plus_1_y_chanx_input_nodes) == len(x_plus_1_y_chanx_output_nodes)
-    assert len(x_y_plus_1_chany_input_nodes) == len(x_y_plus_1_chany_output_nodes)
+    #Print different lens for debugging
+    print_verbose(f"{'*' * 10}")
+    print_verbose(f"X: {x} Y: {y} Input Layer: {input_layer} Output Layer: {output_layer}")
+    print_verbose(f"Input Nodes:                  {len(input_nodes)}                  Output Nodes: {len(output_nodes)}")
 
-    max_len = max(len(x_y_chanx_input_nodes), len(x_y_chany_input_nodes), len(x_plus_1_y_chanx_input_nodes), len(x_y_plus_1_chany_input_nodes))
+    print_verbose(f"x_y_chanx_input_nodes:        {len(x_y_chanx_input_nodes)}        x_y_chanx_output_nodes: {len(x_y_chanx_output_nodes)}")   
+    print_verbose(f"x_y_chany_input_nodes:        {len(x_y_chany_input_nodes)}        x_y_chany_output_nodes: {len(x_y_chany_output_nodes)}")    
+    print_verbose(f"x_plus_1_y_chanx_input_nodes: {len(x_plus_1_y_chanx_input_nodes)} x_plus_1_y_chanx_output_nodes: {len(x_plus_1_y_chanx_output_nodes)}")
+    print_verbose(f"x_y_plus_1_chany_input_nodes: {len(x_y_plus_1_chany_input_nodes)} x_y_plus_1_chany_output_nodes: {len(x_y_plus_1_chany_output_nodes)}")
+
+    print_verbose(f"{'*' * 10}")    
+    print_verbose(f"x_y_chanx_input_nodes:  {x_y_chanx_input_nodes}")
+    print_verbose(f"x_y_chanx_output_nodes: {x_y_chanx_output_nodes}")
+
+    print_verbose(f"{'*' * 5}")
+    print_verbose(f"x_y_chany_input_nodes:  {x_y_chany_input_nodes}")
+    print_verbose(f"x_y_chany_output_nodes: {x_y_chany_output_nodes}")
+
+    print_verbose(f"{'*' * 5}")
+    print_verbose(f"x_plus_1_y_chanx_input_nodes:  {x_plus_1_y_chanx_input_nodes}")
+    print_verbose(f"x_plus_1_y_chanx_output_nodes: {x_plus_1_y_chanx_output_nodes}")
+
+    print_verbose(f"{'*' * 5}")    
+    print_verbose(f"x_y_plus_1_chany_input_nodes:  {x_y_plus_1_chany_input_nodes}")
+    print_verbose(f"x_y_plus_1_chany_output_nodes: {x_y_plus_1_chany_output_nodes}")
+
+    # assert len(x_y_chanx_input_nodes) == len(x_y_chanx_output_nodes)
+    # assert len(x_y_chany_input_nodes) == len(x_y_chany_output_nodes)
+    # assert len(x_plus_1_y_chanx_input_nodes) == len(x_plus_1_y_chanx_output_nodes)
+    # assert len(x_y_plus_1_chany_input_nodes) == len(x_y_plus_1_chany_output_nodes)
+
+    max_output_len = int(max(len(x_y_chanx_output_nodes), len(x_y_chany_output_nodes), len(x_plus_1_y_chanx_output_nodes), len(x_y_plus_1_chany_output_nodes)) * vertical_connectivity_percentage)
 
     if connection_type == "subset":
-        return create_subset_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
+        return create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
     elif connection_type == "wilton":
-        return create_wilton_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
-    else:
-        return create_wilton_2_connection_3d_sb(max_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
+        return create_wilton_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
+    elif connection_type == "wilton_2":
+        return create_wilton_2_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
+    elif connection_type == "wilton_3":
+        return create_wilton_3_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
 
 def percentage_skip_2d_deterministic(grid_x, grid_y, percent):
     """
@@ -745,8 +932,9 @@ def percentage_skip_loop(iterable, percent):
             continue
         yield item
 
-def create_sb(structure, is_combined=False, connection_type="subset"):
-    print("Creating SB connections")
+def create_sb(structure, is_combined=False, connection_type="subset", vertical_connectivity_percentage=1):
+    print_verbose("Creating SB connections")
+    
     start_time = time.time()
     # loop over the device and find the highest CHAN x and y
     # device_x, device_y, num_layers = find_device_chan_dim()
@@ -765,6 +953,10 @@ def create_sb(structure, is_combined=False, connection_type="subset"):
     print_iter = round(number_sbs / 5)
     # For each location, find all relevant chans that either enter or exit th SB
     for x, y in percentage_skip_2d_deterministic(device_max_x, device_max_y, percent_connectitivty):
+
+        print_verbose(f"{'*' * 60}")
+        print_verbose("Creating SB for x:", x, "y:", y)
+        print_verbose(f"{'*' * 60}")
         num_created += 1
         chan_nodes = find_chan_nodes(x, y)
         layer_0_sb_input_nodes, layer_0_sb_output_nodes, layer_1_sb_input_nodes, layer_1_sb_output_nodes = sort_chan_nodes_into_input_and_output(chan_nodes, x, y)
@@ -776,25 +968,28 @@ def create_sb(structure, is_combined=False, connection_type="subset"):
         new_edges_1 = []
 
         if is_combined:
-            input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type)
-            input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type)
+            input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type, vertical_connectivity_percentage)
+            input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type, vertical_connectivity_percentage)
+
+            print_verbose(f"{'*' * 10}")
+
+            print_verbose(f"Created {len(input_layer_0_none_nodes)} input none nodes for layer 0 ")
+            print_verbose(f"Created {len(output_layer_0_none_nodes)} output none nodes for none nodes for layer 1")
+            print_verbose(f"Created {len(input_layer_1_none_nodes)} input none nodes for layer 1")
+            print_verbose(f"Created {len(output_layer_1_none_nodes)} output none nodes for layer 0")
 
             nodes_to_write.extend(input_layer_0_none_nodes)
             nodes_to_write.extend(output_layer_1_none_nodes)
             nodes_to_write.extend(input_layer_1_none_nodes)
             nodes_to_write.extend(output_layer_0_none_nodes)
 
+            print_verbose(f"Created {len(new_edges_0)} edges to connect layer 0 to layer 1")
+            print_verbose(f"Created {len(new_edges_1)} edges to connect layer 1 to layer 0")
+
             edges_to_write.extend(new_edges_0)
             edges_to_write.extend(new_edges_1)
 
         else:
-            # for input_layer_node, output_layer_node, new_edges in itertools.chain(
-            #     connect_sb_nodes_full(layer_0_sb_input_nodes, layer_1_sb_output_nodes),
-            #     connect_sb_nodes_full(layer_1_sb_input_nodes, layer_0_sb_output_nodes),
-            # ):
-            #     nodes_to_write.extend((input_layer_node, output_layer_node))
-            #     edges_to_write.extend(new_edges)
-            
             new_nodes, new_edges = create_full_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y)
             nodes_to_write.extend(new_nodes)
             edges_to_write.extend(new_edges)
@@ -804,40 +999,40 @@ def create_sb(structure, is_combined=False, connection_type="subset"):
             edges_to_write.extend(new_edges)
 
         if num_created % print_iter == 0:
-            print(f"Created {round((num_created / number_sbs) * 100)}% of 3D SBs")
+            print_verbose(f"Created {round((num_created / number_sbs) * 100)}% of 3D SBs")
 
-        # print("added", len(nodes_to_write) - node_count_before, "nodes to make", total_size((nodes_to_write, node_data, node_index)) / (1024 * 1024 * 1024), "GiB, added", len(edges_to_write) - edge_count_before, "edges to make", total_size((edges_to_write, edge_data, edges_by_src, edges_by_sink)) / (1024 * 1024 * 1024), "GiB")
+        # print_verbose("added", len(nodes_to_write) - node_count_before, "nodes to make", total_size((nodes_to_write, node_data, node_index)) / (1024 * 1024 * 1024), "GiB, added", len(edges_to_write) - edge_count_before, "edges to make", total_size((edges_to_write, edge_data, edges_by_src, edges_by_sink)) / (1024 * 1024 * 1024), "GiB")
     
-    print(f"\nNumber of new nodes: {len(nodes_to_write)}")
-    print(f"Number of new edges: {len(edges_to_write)}\n")
+    print_verbose(f"\nNumber of new nodes: {len(nodes_to_write)}")
+    print_verbose(f"Number of new edges: {len(edges_to_write)}\n")
 
-    print("Sorting Nodes")
+    print_verbose("Sorting Nodes")
     sorting_start_time = time.time()
     nodes_to_write = sort_nodes(nodes_to_write)
     sorting_end_time = time.time()
 
-    print(f"Sorting Nodes took { ((sorting_end_time - sorting_start_time) * 1000):0.2f} ms")
+    print_verbose(f"Sorting Nodes took { ((sorting_end_time - sorting_start_time) * 1000):0.2f} ms")
 
-    print("Writing SB Nodes and Edges")
+    print_verbose("Writing SB Nodes and Edges")
     writing_start_time = time.time()
     write_sb_nodes(structure, nodes_to_write)
     write_sb_edges(structure, edges_to_write)
 
     writing_end_time = time.time()
-    print(f"Writing SB Nodes and Edges took { ((writing_end_time - writing_start_time) * 1000):0.2f} ms")
+    print_verbose(f"Writing SB Nodes and Edges took { ((writing_end_time - writing_start_time) * 1000):0.2f} ms")
 
     end_time = time.time()
-    print(f"Creating SB connections took { ((end_time - start_time) * 1000):0.2f} ms")
+    print_verbose(f"Creating SB connections took { ((end_time - start_time) * 1000):0.2f} ms")
 
-    print(f"Total number of SBs created: {num_created}")
+    print_verbose(f"Total number of SBs created: {num_created}")
 
 def main():
-    if len(sys.argv) < 5:
-        print("Usage: python script.py <file_path> <output_file_path> <is_combined_sb[0:false, 1:true]> <percent_connectivity[float]> <connection_type[subset, wilton, wilton_2]>")
+    if len(sys.argv) < 6:
+        print("Usage: python script.py <file_path> <output_file_path> <is_combined_sb[0:false, 1:true]> <percent_connectivity[float]> <connection_type[subset, wilton, wilton_2, wilton_3]> <vertical_connectivity_percentage[float]> <verbose [0:False, 1: True] (Optional)>")
         sys.exit(1)
 
     start_time = time.time()
-
+    
     # Get the file path from the command-line argument
     file_path = sys.argv[1]
     output_file_path = sys.argv[2]
@@ -850,9 +1045,19 @@ def main():
 
     connection_type = sys.argv[5]
 
-    print(f"Percent Connectivity: {percent_connectitivty}")
+    vertical_connectivity_percentage = float(sys.argv[6])
+
+    global verbose
+
+    if len(sys.argv) >= 8:
+        verbose = True if int(sys.argv[7]) == 1 else False
+    else: 
+        verbose = False
 
     print(f"Creating { 'combined' if is_combined_sb else 'full' } SBs for file {file_path}")
+
+    print_verbose(f"Percent Connectivity: {percent_connectitivty}")
+
 
     parser = etree.XMLParser(
             remove_blank_text=True,
@@ -864,24 +1069,12 @@ def main():
 
     structure, tree = read_structure(file_path, parser)
     extract_nodes(structure)
-    create_sb(structure, is_combined_sb, connection_type)
+    create_sb(structure, is_combined_sb, connection_type, vertical_connectivity_percentage)
 
     tree.write(output_file_path, pretty_print=False, xml_declaration=True, encoding="UTF-8", compression=None)
 
     end_time = time.time()
     print(f"Generating SBs took { ((end_time - start_time) * 1000):0.2f} ms")
-    
+
 if __name__ == "__main__":
     main()
-    # node_data.close()
-    # edge_data.close()
-
-    # # Time profiling
-    # profiler = cProfile.Profile()
-    # profiler.enable()
-    # main()
-    # profiler.disable()
-
-    # # Print time profiling results
-    # stats = pstats.Stats(profiler).sort_stats('tottime')
-    # stats.print_stats()
