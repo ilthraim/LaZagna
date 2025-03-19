@@ -1,5 +1,7 @@
 
 
+
+
 module single_port_ram_21_8(
 			clk,
 			data,
@@ -3140,7 +3142,6 @@ assign dabt = dabt_reg || i_dabt;
 // ========================================================
 // Decompiler for debugging core - not synthesizable
 // ========================================================
-//synopsys translate_off
  
 //`include "a25/debug_functions.v"
  
@@ -3215,7 +3216,6 @@ assign xTYPE  =
         $display("Instruction with x's =%08h", instruction);
         end
 */
-//synopsys translate_on
  
 endmodule
 
@@ -5239,8 +5239,7 @@ assign pc_wen       = (i_pc_wen || !execute) && !i_conflict;
  
 // only update register bank if current instruction executes
 //assign reg_bank_wen = {{15{execute}} & i_reg_bank_wen};
- assign reg_bank_wen = execute ==1'd1? {15'b111111111111111 & i_reg_bank_wen}   :
-					{15'b0 & i_reg_bank_wen};
+ assign reg_bank_wen = execute == 1'd1 ? {15'b111111111111111 & i_reg_bank_wen} : {15'b0 & i_reg_bank_wen};
  
 // ========================================================
 // Priviledged output flag
@@ -5444,7 +5443,6 @@ a25_register_bank u_register_bank(
 // ========================================================
 // Debug - non-synthesizable code
 // ========================================================
-//synopsys translate_off
  
 wire    [(2*8)-1:0]    xCONDITION;
 wire    [(4*8)-1:0]    xMODE;
@@ -5472,7 +5470,6 @@ assign  xMODE  =  status_bits_mode == SVC  ? "SVC"  :
                   			     "USR"  ;
  
  
-//synopsys translate_on
  
 endmodule
 
@@ -6606,7 +6603,6 @@ assign next_way   = 	valid_bits_r[0] == 1'd0 ? 4'b0001:
 // ========================================================
 // Debug WB bus - not synthesizable
 // ========================================================
-//synopsys translate_off
 //wire    [(6*8)-1:0]     xSOURCE_SEL;
 //wire    [(22*8)-1:0]    xC_STATE;
 // 
@@ -6684,7 +6680,6 @@ end
 endgenerate
 */ 
  
-//synopsys translate_on
  
 endmodule
  
@@ -7116,12 +7111,10 @@ always @( posedge i_clk )
  
  
 // Used by a25_decompile.v, so simulation only
-//synopsys translate_off    
 reg  [31:0]         daddress_r = 32'd0;               // Register read data from Data Cache
 always @( posedge i_clk )
     if ( !i_mem_stall )
         daddress_r              <= i_daddress;
-//synopsys translate_on    
  
 endmodule
  
@@ -8208,3 +8201,208 @@ a25_coprocessor u_coprocessor (
 
 endmodule
 
+//K-input Look-Up Table
+module LUT_K #(
+    //The Look-up Table size (number of inputs)
+    parameter K = 1, 
+
+    //The lut mask.  
+    //Left-most (MSB) bit corresponds to all inputs logic one. 
+    //Defaults to always false.
+    parameter LUT_MASK={2**K{1'b0}} 
+) (
+    input [K-1:0] in,
+    output out
+);
+
+    specify
+        (in *> out) = "";
+    endspecify
+
+    assign out = LUT_MASK[in];
+
+endmodule
+
+//D-FlipFlop module
+module DFF #(
+    parameter INITIAL_VALUE=1'b0    
+) (
+    input clk,
+    input D,
+    output reg Q
+);
+
+    specify
+        (clk => Q) = "";
+        $setup(D, posedge clk, "");
+        $hold(posedge clk, D, "");
+    endspecify
+
+    initial begin
+        Q <= INITIAL_VALUE;
+    end
+
+    always@(posedge clk) begin
+        Q <= D;
+    end
+endmodule
+
+//Routing fpga_interconnect module
+module fpga_interconnect(
+    input datain,
+    output dataout
+);
+
+    specify
+        (datain=>dataout)="";
+    endspecify
+
+    assign dataout = datain;
+
+endmodule
+
+
+//2-to-1 mux module
+module mux(
+    input select,
+    input x,
+    input y,
+    output z
+);
+
+    assign z = (x & ~select) | (y & select);
+
+endmodule
+
+//n-bit adder
+module adder #(
+    parameter WIDTH = 1   
+) (
+    input [WIDTH-1:0] a, 
+    input [WIDTH-1:0] b, 
+    input cin, 
+    output cout, 
+    output [WIDTH-1:0] sumout);
+
+   specify
+      (a*>sumout)="";
+      (b*>sumout)="";
+      (cin*>sumout)="";
+      (a*>cout)="";
+      (b*>cout)="";
+      (cin=>cout)="";
+   endspecify
+   
+   assign {cout, sumout} = a + b + cin;
+   
+endmodule
+   
+//nxn multiplier module
+module multiply #(
+    //The width of input signals
+    parameter WIDTH = 1
+) (
+    input [WIDTH-1:0] a,
+    input [WIDTH-1:0] b,
+    output [2*WIDTH-1:0] out
+);
+
+    specify
+        (a *> out) = "";
+        (b *> out) = "";
+    endspecify
+
+    assign out = a * b;
+
+endmodule // mult
+
+//single_port_ram module
+(* keep_hierarchy *)
+module single_port_ram #(
+    parameter ADDR_WIDTH = 1,
+    parameter DATA_WIDTH = 1
+) (
+    input clk,
+    input [ADDR_WIDTH-1:0] addr,
+    input [DATA_WIDTH-1:0] data,
+    input we,
+    output reg [DATA_WIDTH-1:0] out
+);
+
+    localparam MEM_DEPTH = 2 ** ADDR_WIDTH;
+
+    reg [DATA_WIDTH-1:0] Mem[MEM_DEPTH-1:0];
+
+    specify
+        (clk*>out)="";
+        $setup(addr, posedge clk, "");
+        $setup(data, posedge clk, "");
+        $setup(we, posedge clk, "");
+        $hold(posedge clk, addr, "");
+        $hold(posedge clk, data, "");
+        $hold(posedge clk, we, "");
+    endspecify
+   
+    always@(posedge clk) begin
+        if(we) begin
+            Mem[addr] = data;
+        end
+    	out = Mem[addr]; //New data read-during write behaviour (blocking assignments)
+    end
+   
+endmodule // single_port_RAM
+
+//dual_port_ram module
+(* keep_hierarchy *)
+module dual_port_ram #(
+    parameter ADDR_WIDTH = 1,
+    parameter DATA_WIDTH = 1
+) (
+    input clk,
+
+    input [ADDR_WIDTH-1:0] addr1,
+    input [ADDR_WIDTH-1:0] addr2,
+    input [DATA_WIDTH-1:0] data1,
+    input [DATA_WIDTH-1:0] data2,
+    input we1,
+    input we2,
+    output reg [DATA_WIDTH-1:0] out1,
+    output reg [DATA_WIDTH-1:0] out2
+);
+
+    localparam MEM_DEPTH = 2 ** ADDR_WIDTH;
+
+    reg [DATA_WIDTH-1:0] Mem[MEM_DEPTH-1:0];
+
+    specify
+        (clk*>out1)="";
+        (clk*>out2)="";
+        $setup(addr1, posedge clk, "");
+        $setup(addr2, posedge clk, "");
+        $setup(data1, posedge clk, "");
+        $setup(data2, posedge clk, "");
+        $setup(we1, posedge clk, "");
+        $setup(we2, posedge clk, "");
+        $hold(posedge clk, addr1, "");
+        $hold(posedge clk, addr2, "");
+        $hold(posedge clk, data1, "");
+        $hold(posedge clk, data2, "");
+        $hold(posedge clk, we1, "");
+        $hold(posedge clk, we2, "");
+    endspecify
+   
+    always@(posedge clk) begin //Port 1
+        if(we1) begin
+            Mem[addr1] = data1;
+        end
+        out1 = Mem[addr1]; //New data read-during write behaviour (blocking assignments)
+    end
+
+    always@(posedge clk) begin //Port 2
+        if(we2) begin
+            Mem[addr2] = data2;
+        end
+        out2 = Mem[addr2]; //New data read-during write behaviour (blocking assignments)
+    end
+   
+endmodule // dual_port_ram
