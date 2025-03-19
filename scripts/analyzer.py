@@ -250,15 +250,18 @@ def create_grouped_csvs(original_path):
 
     results_dir = os.path.abspath(os.path.join(original_path, "..", "results"))
 
-    for folder in results_dir:
-        if os.path.isdir(folder):
-            if folder == "results_csvs" or folder == "pngs":
-                continue
-            print(folder)
-            command = ["python3", os.path.abspath(os.path.join(results_dir, "csv_grouper.py")), folder]
-            os.system(" ".join(command))
+    print("results_dir", results_dir)
 
-            print(f"Data concatenated into ./results_csvs/{folder}_results.csv")
+    for dirpath, dirnames, filenames in os.walk(results_dir):
+        folder_name = os.path.basename(dirpath)
+        
+        if folder_name in ["results_csvs", "pngs"]:
+            continue
+
+        print(dirpath)
+        command = ["python3", os.path.abspath(os.path.join(original_path, "csv_grouper.py")), dirpath]
+
+        os.system(" ".join(command))
 
 def main():
     rcParams['font.family'] = 'Roboto Condensed'
@@ -268,6 +271,8 @@ def main():
     original_path = os.path.dirname(os.path.abspath(__file__))
 
     create_grouped_csvs(original_path)
+
+    return
 
     datas = []
     labels = []

@@ -1025,7 +1025,7 @@ def main():
     args_parser.add_argument("-f", "--input_file",type=str, help="The file path to the VPR RR Graph XML file", required=True)
     args_parser.add_argument("-o", "--output_path", type=str, help="The file path to the output VPR RR Graph XML file", required=True)
     args_parser.add_argument("-p", "--percent_connectivity", type=float, help="The percentage of SBs on fabric that are 3D. Must be a float between 0 and 1", required=True)
-    args_parser.add_argument("-c", "--connection_type", type=str, help="The connection pattern to use for the 3D SBs. Options are: subset, wilton, wilton_2, wilton_3", required=True)
+    args_parser.add_argument("-c", "--connection_type", choices=["subset", "wilton", "wilton_2", "wilton_3", "custom"], help="The connection pattern to use for the 3D SBs. Options are: subset, wilton, wilton_2, wilton_3", required=True)
     args_parser.add_argument("-vp", "--vertical_connectivity_percentage", type=float, help="The percentage of channels at each SB that are connected vertically. Must be a float between 0 and 1", default=1.0)
     args_parser.add_argument("-v", "--verbose", help="Whether to print verbose output.", action="store_true")
 
@@ -1039,7 +1039,7 @@ def main():
     global percent_connectitivty
     percent_connectitivty = args.percent_connectivity
 
-    connection_type = args.connection_type
+    connection_type = args.connection_type.lower()
 
     vertical_connectivity_percentage = args.vertical_connectivity_percentage
 

@@ -14,14 +14,19 @@ else:
 if input_folder.endswith("/"):
     input_folder = input_folder[:-1]
 
-# Define the results folder
-results_folder = csv_folder
+# Define the base results folder
+results_folder = os.path.join(os.path.dirname(input_folder), "results_csvs")
 
 # Create the results folder if it doesn't exist
 os.makedirs(results_folder, exist_ok=True)
 
-# Define the output file path within the results folder
-output_file = os.path.join(results_folder, input_folder + "_results.csv")
+print("results folder: ", results_folder)
+
+# Extract the folder name from the input folder path
+folder_name = os.path.basename(input_folder)
+
+# Construct the output file path
+output_file = os.path.join(results_folder, folder_name + "_results.csv")
 
 # Initialize a list to store all rows
 all_data = []

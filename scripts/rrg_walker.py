@@ -1,12 +1,15 @@
 from lxml import etree
 from collections import namedtuple
 import sys
+from collections import defaultdict
 
-node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc"])
+node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc", "segment_id"])
 edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_layer", "switch_id"])
 
 node_data = {}
 edge_data = {}
+
+node_ids = defaultdict(int)
 
 def extract_nodes(root):
     rr_nodes = root.find("rr_nodes")
@@ -16,6 +19,13 @@ def extract_nodes(root):
         type = node.get("type")
         
         loc = node.find("loc")
+        segment_id = "0"
+
+        if type == "CHANX" or type == "CHANY":
+            segment = node.find("segment")
+            segment_id = segment.get("segment_id")
+
+
 
         layer = loc.get("layer")
         xhigh = loc.get("xhigh")
@@ -26,8 +36,14 @@ def extract_nodes(root):
         ptc = loc.get("ptc")
 
         direction = node.get("direction")
+        # global node_ids
+        # if int(node_id) in node_ids:
+        #     print(f"Node id {int(node_id)} already exists")
+        #     node_ids[int(node_id)] += 1
+        # else:
+        #     node_ids[int(node_id)] = 1
 
-        node_data[node_id] = node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc)
+        node_data[node_id] = node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc, segment_id)
 
 def extract_edges(root):
     rr_edges = root.find("rr_edges")
@@ -418,6 +434,11 @@ def main():
     extract_nodes(root)
     extract_edges(root)
 
+    print(f"Number of nodes: {len(node_data)}")
+    
+    #find largest node id in node_ids
+    # print(f"Largest node id: {max(node_ids)}")
+
     if (interlayer):
 
         # Get file name
@@ -459,21 +480,21 @@ def main():
             print("\nInput nodes:")
             for node in sb_input_nodes:
                 node_info = node_data[node]
-                print(f"\tNode id: {node} type: {node_info.type} layer: {node_info.layer} x: {node_info.xlow} y: {node_info.ylow} side: {node_info.side} direction: {node_info.direction} ptc: {node_info.ptc}")
+                print(f"\tNode id: {node} type: {node_info.type} layer: {node_info.layer} xlow: {node_info.xlow} xhigh: {node_info.xhigh} ylow: {node_info.ylow} yhigh: {node_info.yhigh} side: {node_info.side} direction: {node_info.direction} ptc: {node_info.ptc} segment_id: {node_info.segment_id}")
 
             print()
 
             print("Output nodes:")
             for node in sb_output_nodes:
                 node_info = node_data[node]
-                print(f"\tNode id: {node} type: {node_info.type} layer: {node_info.layer} x: {node_info.xlow} y: {node_info.ylow} side: {node_info.side} direction: {node_info.direction} ptc: {node_info.ptc}")
+                print(f"\tNode id: {node} type: {node_info.type} layer: {node_info.layer} xlow: {node_info.xlow} xhigh: {node_info.xhigh} ylow: {node_info.ylow} yhigh: {node_info.yhigh} side: {node_info.side} direction: {node_info.direction} ptc: {node_info.ptc} segment_id: {node_info.segment_id}")
             
             print()
 
             print("None nodes:")
             for node in none_nodes:
                 node_info = node_data[node]
-                print(f"\tNode id: {node} type: {node_info.type} layer: {node_info.layer} x: {node_info.xlow} y: {node_info.ylow} side: {node_info.side} direction: {node_info.direction} ptc: {node_info.ptc}")
+                print(f"\tNode id: {node} type: {node_info.type} layer: {node_info.layer} xlow: {node_info.xlow} xhigh: {node_info.xhigh} ylow: {node_info.ylow} yhigh: {node_info.yhigh} side: {node_info.side} direction: {node_info.direction} ptc: {node_info.ptc} segment_id: {node_info.segment_id}")
             
             print()
 
@@ -484,13 +505,13 @@ def main():
                 src_node_info = node_data[src_node]
                 sink_node_info = node_data[sink_node]
                 print(f"\tEdge: {edge} Switch id: {edge_info.switch_id}")
-                print(f"\t\tSource node: {src_node} type: {src_node_info.type} layer: {src_node_info.layer} x: {src_node_info.xlow} y: {src_node_info.ylow} side: {src_node_info.side} direction: {src_node_info.direction} ptc: {src_node_info.ptc}")
-                print(f"\t\tSink node: {sink_node} type: {sink_node_info.type} layer: {sink_node_info.layer} x: {sink_node_info.xlow} y: {sink_node_info.ylow} side: {sink_node_info.side} direction: {sink_node_info.direction} ptc: {sink_node_info.ptc}")
+                print(f"\t\tSource node: {src_node} type: {src_node_info.type} layer: {src_node_info.layer} xlow: {src_node_info.xlow} xhigh: {src_node_info.xhigh} ylow: {src_node_info.ylow} yhigh: {src_node_info.yhigh} side: {src_node_info.side} direction: {src_node_info.direction} ptc: {src_node_info.ptc} segment_id: {src_node_info.segment_id}")
+                print(f"\t\tSink node: {sink_node} type: {sink_node_info.type} layer: {sink_node_info.layer}  xlow: {sink_node_info.xlow} xhigh: {sink_node_info.xhigh} ylow: {sink_node_info.ylow} yhigh: {sink_node_info.yhigh} side: {sink_node_info.side} direction: {sink_node_info.direction} ptc: {sink_node_info.ptc} segment_id: {sink_node_info.segment_id}")
                                                                                                                             
         elif node_id != "-1":
             src_nodes = []
             sink_nodes = []
-            print(f"\nNode id: {node_id} type: {node_data[node_id].type} layer: {node_data[node_id].layer} x: {node_data[node_id].xlow} y: {node_data[node_id].ylow} side: {node_data[node_id].side} direction: {node_data[node_id].direction} ptc: {node_data[node_id].ptc}\n")
+            print(f"\nNode id: {node_id} type: {node_data[node_id].type} layer: {node_data[node_id].layer} xlow: {node_data[node_id].xlow} xhigh: {node_data[node_id].xhigh} ylow: {node_data[node_id].ylow} yhigh: {node_data[node_id].yhigh} side: {node_data[node_id].side} direction: {node_data[node_id].direction} ptc: {node_data[node_id].ptc} segment_id: {node_data[node_id].segment_id}\n")
             for edge, edge_info in edge_data.items():
                 if edge_info.src_node == node_id:
                     sink_nodes.append(edge_info.sink_node)
@@ -503,7 +524,7 @@ def main():
                 print("\tNo sources\n")
             else:
                 for src_node in src_nodes:
-                    print(f"\tNode id: {src_node} type: {node_data[src_node].type} layer: {node_data[src_node].layer} x: {node_data[src_node].xlow} y: {node_data[src_node].ylow} side: {node_data[src_node].side} direction: {node_data[src_node].direction} ptc: {node_data[src_node].ptc}\n")
+                    print(f"\tNode id: {src_node} type: {node_data[src_node].type} layer: {node_data[src_node].layer} xlow: {node_data[src_node].xlow} xhigh: {node_data[src_node].xhigh} ylow: {node_data[src_node].ylow} yhigh: {node_data[src_node].yhigh} side: {node_data[src_node].side} direction: {node_data[src_node].direction} ptc: {node_data[src_node].ptc} segment_id: {node_data[src_node].segment_id}\n")
 
             
             print(f"\nSinks of node {node_id}:")
@@ -511,9 +532,9 @@ def main():
                 print("\tNo sinks\n")
             else:
                 for sink_node in sink_nodes:
-                    print(f"\tNode id: {sink_node} type: {node_data[sink_node].type} layer: {node_data[sink_node].layer} x: {node_data[sink_node].xlow} y: {node_data[sink_node].ylow} side: {node_data[sink_node].side} direction: {node_data[sink_node].direction} ptc: {node_data[sink_node].ptc}\n")
+                    print(f"\tNode id: {sink_node} type: {node_data[sink_node].type} layer: {node_data[sink_node].layer} xlow: {node_data[sink_node].xlow} xhigh: {node_data[sink_node].xhigh} ylow: {node_data[sink_node].ylow} yhigh: {node_data[sink_node].yhigh} side: {node_data[sink_node].side} direction: {node_data[sink_node].direction} ptc: {node_data[sink_node].ptc} segment_id: {node_data[sink_node].segment_id}\n")
             print("##########################################################################################\n")
-        else:
+        elif node_id == "-1":
             break
 
 if __name__ == "__main__":
