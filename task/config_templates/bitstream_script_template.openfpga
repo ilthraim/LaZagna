@@ -1,5 +1,5 @@
-vpr ${VPR_ARCH_FILE} ${VPR_TESTBENCH_BLIF} --place_algorithm bounding_box --clock_modeling route --route_chan_width
-
+vpr ${VPR_ARCH_FILE} ${VPR_TESTBENCH_BLIF} --place_algorithm bounding_box --clock_modeling route
+# --router_max_convergence_count 5 --bb_factor 10 --place_effort_scaling device_circuit --inner_num 100 
 # Read OpenFPGA architecture definition
 #read_openfpga_arch -f ${OPENFPGA_ARCH_FILE}
 

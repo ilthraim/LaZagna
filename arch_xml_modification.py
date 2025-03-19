@@ -1,4 +1,5 @@
 from lxml import etree
+from printing import print_verbose
 
 def set_fixed_layout_dimensions(root, width, height):
     """Set the width and height attributes of the fixed_layout element."""
@@ -7,7 +8,7 @@ def set_fixed_layout_dimensions(root, width, height):
         fixed_layout.set('width', str(width))
         fixed_layout.set('height', str(height))
     else:
-        print("No fixed_layout element found.")
+        print_verbose("No fixed_layout element found.")
 
 def get_max_die_number(root):
     """Get the maximum die number among existing layers."""
@@ -26,7 +27,7 @@ def copy_layer_with_incremented_die(root, source_die, new_die):
             break
     
     if source_layer is None:
-        print(f"Layer with die='{source_die}' not found.")
+        print_verbose(f"Layer with die='{source_die}' not found.")
         return False
     
     # Deep copy the source layer
@@ -40,7 +41,7 @@ def copy_layer_with_incremented_die(root, source_die, new_die):
         fixed_layout.append(new_layer)
         return True
     else:
-        print("No fixed_layout element found.")
+        print_verbose("No fixed_layout element found.")
         return False
 
 def add_new_layer(root, base_die=None):
@@ -49,7 +50,7 @@ def add_new_layer(root, base_die=None):
         # Use the first layer if base_die is not specified
         layers = root.findall('.//layer')
         if not layers:
-            print("No layers available to copy.")
+            print_verbose("No layers available to copy.")
             return
         base_die = layers[0].get('die')
     
@@ -57,6 +58,6 @@ def add_new_layer(root, base_die=None):
     new_die = max_die + 1
     success = copy_layer_with_incremented_die(root, source_die=base_die, new_die=new_die)
     if success:
-        print(f"New layer added with die='{new_die}'.")
+        print_verbose(f"New layer added with die='{new_die}'.")
     else:
-        print("Failed to add new layer.")
+        print_verbose("Failed to add new layer.")

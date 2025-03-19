@@ -33,6 +33,16 @@ def append_random_seed_to_script(script_path, random_seed):
                 line = line.rstrip('\n') + " " + "--seed " + str(random_seed) + "\n"
             file.write(line)
 
+def append_extra_vpr_option_to_script(script_path, string_to_add):
+    with open(script_path, 'r') as file:
+        lines = file.readlines()
+
+    with open(script_path, 'w') as file:
+        for line in lines:
+            if line.startswith("vpr"):
+                # Append the string to the line
+                line = line.rstrip('\n') + " "  + str(string_to_add) + "\n"
+            file.write(line)
 
 def append_cw_to_script(file_path, string_to_add):
     """
@@ -49,7 +59,7 @@ def append_cw_to_script(file_path, string_to_add):
         for line in lines:
             if line.startswith("vpr"):
                 # Append the string to the line
-                line = line.rstrip('\n') + " " + string_to_add + "\n"
+                line = line.rstrip('\n') + " --route_chan_width " + string_to_add + "\n"
             file.write(line)
 
 def remove_cw_from_script(file_path):
@@ -72,7 +82,7 @@ def remove_cw_from_script(file_path):
                 # Split the line into words, remove the last word, and rejoin
                 words = line.rstrip('\n').split()
                 if len(words) > 1:
-                    line = " ".join(words[:-1]) + "\n"
+                    line = " ".join(words[:-2]) + "\n"
                 else:
                     line = ""  # If only "vpr" exists, remove the line entirely
             file.write(line)
