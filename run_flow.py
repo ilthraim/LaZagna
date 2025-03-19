@@ -191,7 +191,7 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     # if 3d rrg does not exist, create it
     if not os.path.exists(original_dir + rrg_3d_path) and type_sb != "3d_cb" and type_sb != "2d" and type_sb != "3d_cb_out_only":
         start_time = time.time()
-        create_custom_3d_rrg(rrg_path, rrg_3d_path, original_dir, type_sb, percent_connectivity, connection_type)
+        create_custom_3d_rrg(rrg_path, rrg_3d_path, original_dir, percent_connectivity, connection_type)
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
@@ -257,19 +257,17 @@ def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to
     
     run_command_in_temp_dir(command, original_dir, handle_error=False, verbose=False)
 
-def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, type_sb="full", percent_connectivity=0.5, connection_type="subset"):
-    sb_type = "0" if type_sb == "full" else "1"
+def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent_connectivity=0.5, connection_type="subset"):
 
     # Make sure the output directory exists
     os.makedirs(os.path.dirname(original_dir + output_file_path), exist_ok=True)
 
     command = ["python3", 
                original_dir + "/scripts/3d_sb_creator.py",
-               original_dir + base_arch_path,
-               original_dir + output_file_path,
-               sb_type,
-               str(percent_connectivity),
-               connection_type]
+               "-f", original_dir + base_arch_path,
+               "-o", original_dir + output_file_path,
+               "-p", str(percent_connectivity),
+               "-c", connection_type]
     
     run_command_in_temp_dir(command, original_dir, verbose=True)
 

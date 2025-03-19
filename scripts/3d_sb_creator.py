@@ -13,6 +13,7 @@ import numpy as np
 import cProfile
 import pstats
 from copy import deepcopy
+import argparse
 
 node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc"])
 edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_layer"])
@@ -932,7 +933,7 @@ def percentage_skip_loop(iterable, percent):
             continue
         yield item
 
-def create_sb(structure, is_combined=False, connection_type="subset", vertical_connectivity_percentage=1):
+def create_sb(structure,  connection_type="subset", vertical_connectivity_percentage=1):
     print_verbose("Creating SB connections")
     
     start_time = time.time()
@@ -967,36 +968,28 @@ def create_sb(structure, is_combined=False, connection_type="subset", vertical_c
         new_edges_0 = []
         new_edges_1 = []
 
-        if is_combined:
-            input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type, vertical_connectivity_percentage)
-            input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type, vertical_connectivity_percentage)
+        input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type, vertical_connectivity_percentage)
+        input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type, vertical_connectivity_percentage)
 
-            print_verbose(f"{'*' * 10}")
+        print_verbose(f"{'*' * 10}")
 
-            print_verbose(f"Created {len(input_layer_0_none_nodes)} input none nodes for layer 0 ")
-            print_verbose(f"Created {len(output_layer_0_none_nodes)} output none nodes for none nodes for layer 1")
-            print_verbose(f"Created {len(input_layer_1_none_nodes)} input none nodes for layer 1")
-            print_verbose(f"Created {len(output_layer_1_none_nodes)} output none nodes for layer 0")
+        print_verbose(f"Created {len(input_layer_0_none_nodes)} input none nodes for layer 0 ")
+        print_verbose(f"Created {len(output_layer_0_none_nodes)} output none nodes for none nodes for layer 1")
+        print_verbose(f"Created {len(input_layer_1_none_nodes)} input none nodes for layer 1")
+        print_verbose(f"Created {len(output_layer_1_none_nodes)} output none nodes for layer 0")
 
-            nodes_to_write.extend(input_layer_0_none_nodes)
-            nodes_to_write.extend(output_layer_1_none_nodes)
-            nodes_to_write.extend(input_layer_1_none_nodes)
-            nodes_to_write.extend(output_layer_0_none_nodes)
+        nodes_to_write.extend(input_layer_0_none_nodes)
+        nodes_to_write.extend(output_layer_1_none_nodes)
+        nodes_to_write.extend(input_layer_1_none_nodes)
+        nodes_to_write.extend(output_layer_0_none_nodes)
 
-            print_verbose(f"Created {len(new_edges_0)} edges to connect layer 0 to layer 1")
-            print_verbose(f"Created {len(new_edges_1)} edges to connect layer 1 to layer 0")
+        print_verbose(f"Created {len(new_edges_0)} edges to connect layer 0 to layer 1")
+        print_verbose(f"Created {len(new_edges_1)} edges to connect layer 1 to layer 0")
 
-            edges_to_write.extend(new_edges_0)
-            edges_to_write.extend(new_edges_1)
+        edges_to_write.extend(new_edges_0)
+        edges_to_write.extend(new_edges_1)
 
-        else:
-            new_nodes, new_edges = create_full_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y)
-            nodes_to_write.extend(new_nodes)
-            edges_to_write.extend(new_edges)
-
-            new_nodes, new_edges = create_full_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y)
-            nodes_to_write.extend(new_nodes)
-            edges_to_write.extend(new_edges)
+        
 
         if num_created % print_iter == 0:
             print_verbose(f"Created {round((num_created / number_sbs) * 100)}% of 3D SBs")
@@ -1027,37 +1020,36 @@ def create_sb(structure, is_combined=False, connection_type="subset", vertical_c
     print_verbose(f"Total number of SBs created: {num_created}")
 
 def main():
-    if len(sys.argv) < 6:
-        print("Usage: python script.py <file_path> <output_file_path> <is_combined_sb[0:false, 1:true]> <percent_connectivity[float]> <connection_type[subset, wilton, wilton_2, wilton_3]> <vertical_connectivity_percentage[float]> <verbose [0:False, 1: True] (Optional)>")
-        sys.exit(1)
+    args_parser = argparse.ArgumentParser(description="Generate 3D Switch Blocks (SBs) for a given VPR RR Graph without 3D SBs")
+
+    args_parser.add_argument("-f", "--input_file",type=str, help="The file path to the VPR RR Graph XML file", required=True)
+    args_parser.add_argument("-o", "--output_path", type=str, help="The file path to the output VPR RR Graph XML file", required=True)
+    args_parser.add_argument("-p", "--percent_connectivity", type=float, help="The percentage of SBs on fabric that are 3D. Must be a float between 0 and 1", required=True)
+    args_parser.add_argument("-c", "--connection_type", type=str, help="The connection pattern to use for the 3D SBs. Options are: subset, wilton, wilton_2, wilton_3", required=True)
+    args_parser.add_argument("-vp", "--vertical_connectivity_percentage", type=float, help="The percentage of channels at each SB that are connected vertically. Must be a float between 0 and 1", default=1.0)
+    args_parser.add_argument("-v", "--verbose", help="Whether to print verbose output.", action="store_true")
+
+    args = args_parser.parse_args()
 
     start_time = time.time()
     
-    # Get the file path from the command-line argument
-    file_path = sys.argv[1]
-    output_file_path = sys.argv[2]
-    is_combined_sb = True
+    file_path = args.input_file
+    output_file_path = args.output_path
 
-    is_combined_sb = bool(int(sys.argv[3])) # Only 0 is seen as false
-    
     global percent_connectitivty
-    percent_connectitivty = float(sys.argv[4])
+    percent_connectitivty = args.percent_connectivity
 
-    connection_type = sys.argv[5]
+    connection_type = args.connection_type
 
-    vertical_connectivity_percentage = float(sys.argv[6])
+    vertical_connectivity_percentage = args.vertical_connectivity_percentage
 
     global verbose
 
-    if len(sys.argv) >= 8:
-        verbose = True if int(sys.argv[7]) == 1 else False
-    else: 
-        verbose = False
+    verbose = args.verbose
 
-    print(f"Creating { 'combined' if is_combined_sb else 'full' } SBs for file {file_path}")
+    design_string = f"{file_path} with {(percent_connectitivty * 100):0.1f} SBs, connection type: {connection_type}, vertical connectivity percentage: {vertical_connectivity_percentage} outputting to {output_file_path}"
 
-    print_verbose(f"Percent Connectivity: {percent_connectitivty}")
-
+    print(f"Creating 3D SBs for {design_string}")
 
     parser = etree.XMLParser(
             remove_blank_text=True,
@@ -1069,7 +1061,7 @@ def main():
 
     structure, tree = read_structure(file_path, parser)
     extract_nodes(structure)
-    create_sb(structure, is_combined_sb, connection_type, vertical_connectivity_percentage)
+    create_sb(structure, connection_type, vertical_connectivity_percentage)
 
     tree.write(output_file_path, pretty_print=False, xml_declaration=True, encoding="UTF-8", compression=None)
 
