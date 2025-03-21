@@ -14901,22 +14901,15 @@ output reg [(DWIDTH-1):0] out_b;
 
 reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
-  if (wren_a) begin
+  if (wren_a) 
       ram[address_a] <= data_a;
-  end
-  else begin
-      out_a <= ram[address_a];
-  end
+  if (wren_b) 
+      ram[address_b] <= data_b;
+  
+  out_a <= ram[address_a];
+  out_b <= ram[address_b];
 end
   
-always @ (posedge clk) begin 
-  if (wren_b) begin
-      ram[address_b] <= data_b;
-  end 
-  else begin
-      out_b <= ram[address_b];
-  end
-end
 
 `else
 

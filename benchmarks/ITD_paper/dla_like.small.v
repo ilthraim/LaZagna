@@ -14531,12 +14531,12 @@ output reg [(DWIDTH-1):0] out2;
 
 reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
-  if (we1) begin
+  if (we1) 
       ram[addr1] <= data1;
-  end
-//  else begin
-      out1 <= ram[addr1];
-//  end
+  if (we2)
+      ram[addr2] <= data2;
+  out1 <= ram[addr1];
+  out2 <= ram[addr2];
 end
   
 always @ (posedge clk) begin 

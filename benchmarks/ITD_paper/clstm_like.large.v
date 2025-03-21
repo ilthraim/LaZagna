@@ -4664,18 +4664,14 @@ output reg [(DWIDTH-1):0] out2;
 
 reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
-	if (we1) begin
+	if (we1) 
 		ram[addr1] <= data1;
-	end
-	out1 <= ram[addr1];
-end
-
-always @ (posedge clk) begin 
-	if (we2) begin
+	if (we2) 
 		ram[addr2] <= data2;
-	end 
+	out1 <= ram[addr1];
 	out2 <= ram[addr2];
 end
+
 
 `else
 

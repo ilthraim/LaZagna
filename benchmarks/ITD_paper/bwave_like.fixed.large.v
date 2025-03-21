@@ -7232,21 +7232,13 @@ reg [DWIDTH-1:0] ram [((1<<AWIDTH)-1):0];
 // Port A
 always @(posedge clk)  begin
 
-    if (wea) begin
+    if (wea)
         ram[addra] <= ina;
-    end
-
-    outa <= ram[addra];
-end
-
-// Port B
-always @(posedge clk)  begin
-
-    if (web) begin
+    if (web) 
         ram[addrb] <= inb;
-    end
-
+    
     outb <= ram[addrb];
+    outa <= ram[addra];
 end
 
 `else

@@ -787,21 +787,12 @@ output reg [(`VECTOR_BITS-1):0] out_b
 reg [`VECTOR_BITS-1:0] ram[`NUM_WORDS-1:0];
 
 always @ (posedge clk) begin 
-  if (wren_a) begin
+  if (wren_a) 
       ram[address_a] <= data_a;
-  end
-  else begin
-      out_a <= ram[address_a];
-  end
-end
-  
-always @ (posedge clk) begin 
-  if (wren_b) begin
-      ram[address_b] <= data_b;
-  end 
-  else begin
-      out_b <= ram[address_b];
-  end
+  if (wren_b)
+	  ram[address_b] <= data_b;
+  out_a <= ram[address_a];
+  out_b <= ram[address_b];
 end
 
 `else
@@ -844,21 +835,12 @@ output reg [((`NUM_WORDS*`DATA_WIDTH)-1):0] out_b
 reg [(`NUM_WORDS*`DATA_WIDTH)-1:0] ram[`VECTOR_DEPTH-1:0];
 
 always @ (posedge clk) begin 
-  if (wren_a) begin
+  if (wren_a) 
       ram[address_a] <= data_a;
-  end
-  else begin
-      out_a <= ram[address_a];
-  end
-end
-  
-always @ (posedge clk) begin 
-  if (wren_b) begin
-      ram[address_b] <= data_b;
-  end 
-  else begin
-      out_b <= ram[address_b];
-  end
+  if (wren_b)
+	  ram[address_b] <= data_b;
+  out_a <= ram[address_a];
+  out_b <= ram[address_b];
 end
 
 `else
@@ -900,16 +882,11 @@ output reg [`DATA_WIDTH-1:0] out_b
 reg [`DATA_WIDTH-1:0] ram[`OUT_RAM_DEPTH-1:0];
 
 always @ (posedge clk) begin 
-  if (wren_a) begin
+  if (wren_a) 
       ram[address_a] <= data_a;
-  end
+  if (wren_b)
+	  ram[address_b] <= data_b;
   out_a <= ram[address_a];
-end
-  
-always @ (posedge clk) begin 
-  if (wren_b) begin
-      ram[address_b] <= data_b;
-  end 
   out_b <= ram[address_b];
 end
 
@@ -1035,16 +1012,11 @@ output reg [(DWIDTH-1):0] out_b;
 
 reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
-  if (wren_a) begin
+  if (wren_a) 
       ram[address_a] <= data_a;
-  end
+  if (wren_b)
+	  ram[address_b] <= data_b;
   out_a <= ram[address_a];
-end
-  
-always @ (posedge clk) begin 
-  if (wren_b) begin
-      ram[address_b] <= data_b;
-  end 
   out_b <= ram[address_b];
 end
 
