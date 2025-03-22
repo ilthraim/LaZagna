@@ -430,9 +430,7 @@ always @ (posedge clk) begin
   if (wren_a) begin
       ram[address_a] <= data_a;
   end
-  else begin
-      out_a <= ram[address_a];
-  end
+  out_a <= ram[address_a];
 end
   
 
@@ -470,9 +468,8 @@ always @ (posedge clk) begin
   if (wren_a) begin
       ram[address_a] <= data_a;
   end
-  else begin
-      out_a <= ram[address_a];
-  end
+  out_a <= ram[address_a];
+  
 end
   
 
@@ -510,9 +507,8 @@ always @ (posedge clk) begin
   if (wren_a) begin
       ram[address_a] <= data_a;
   end
-  else begin
-      out_a <= ram[address_a];
-  end
+  out_a <= ram[address_a];
+  
 end
   
 

@@ -16676,7 +16676,7 @@ reg [MW*DW-1:0] ram[((1 << AW)-1):0];
   
 always @(posedge clk) begin 
     if (we0_coalesced) ram[addr0] <= d0; 
-    if (we1_coalesced) ram[addr1] <= d1; 
+    else if (we1_coalesced) ram[addr1] <= d1; 
 
     q0 <= ram[addr0];  
     q1 <= ram[addr1];  

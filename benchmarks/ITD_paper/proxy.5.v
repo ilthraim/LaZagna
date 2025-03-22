@@ -5007,7 +5007,7 @@ reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
   if (wren_a) 
       ram[address_a] <= data_a;
-  if (wren_b) 
+  else if (wren_b) 
       ram[address_b] <= data_b;
 
   out_a <= ram[address_a];
@@ -8144,7 +8144,7 @@ reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
   if (wren_a) 
       ram[address_a] <= data_a;
-  if (wren_b) 
+  else if (wren_b) 
       ram[address_b] <= data_b;
   out_a <= ram[address_a];
   out_b <= ram[address_b];
@@ -8280,7 +8280,7 @@ reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
   if (wren_a) 
       ram[address_a] <= data_a;
-  if (wren_b) 
+  else if (wren_b) 
       ram[address_b] <= data_b;
   
   out_a <= ram[address_a];

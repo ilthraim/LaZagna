@@ -7234,7 +7234,7 @@ always @(posedge clk)  begin
 
     if (wea)
         ram[addra] <= ina;
-    if (web) 
+    else if (web) 
         ram[addrb] <= inb;
     
     outb <= ram[addrb];

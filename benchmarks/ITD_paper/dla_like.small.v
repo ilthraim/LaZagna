@@ -14533,20 +14533,12 @@ reg [DWIDTH-1:0] ram[NUM_WORDS-1:0];
 always @ (posedge clk) begin 
   if (we1) 
       ram[addr1] <= data1;
-  if (we2)
+  else if (we2)
       ram[addr2] <= data2;
   out1 <= ram[addr1];
   out2 <= ram[addr2];
 end
   
-always @ (posedge clk) begin 
-  if (we2) begin
-      ram[addr2] <= data2;
-  end 
-//  else begin
-      out2 <= ram[addr2];
-//  end
-end
 
 `else
 defparam u_dual_port_ram.ADDR_WIDTH = AWIDTH;

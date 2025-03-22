@@ -335,8 +335,8 @@ always @(posedge clk)
 begin 
     if (we) 
       ram[addr] <= d;
-    else 
-      q <= ram[addr];
+     
+    q <= ram[addr];
 end
 
 `else
