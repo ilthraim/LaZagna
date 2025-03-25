@@ -122,11 +122,11 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_cb_arch/" 
     elif type_sb == "hybrid_cb":
-        input_file = original_dir + "/arch_files/templates/vtr_3d_cb_arch.xml"
-        output_file = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_arch_" + str(width) + "x" + str(height) + ".xml"
+        arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_arch.xml"
+        arch_output_dir = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_arch_" + str(width) + "x" + str(height) + ".xml"
     elif type_sb == "hybrid_cb_out":
-        input_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
-        output_file = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_out_arch_" + str(width) + "x" + str(height) + ".xml"
+        arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
+        arch_output_dir = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_out_arch_" + str(width) + "x" + str(height) + ".xml"
     else:
         arch_base_file = original_dir + "/arch_files/templates/vtr_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_arch/"
@@ -204,7 +204,7 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     # if 3d rrg does not exist, create it
     if not os.path.exists(original_dir + rrg_3d_path) and type_sb != "3d_cb" and type_sb != "2d" and type_sb != "3d_cb_out_only":
         start_time = time.time()
-        create_custom_3d_rrg(rrg_path, rrg_3d_path, original_dir, percent_connectivity, connection_type)
+        create_custom_3d_rrg(rrg_path, rrg_3d_path, original_dir, percent_connectivity, connection_type, arch_file=arch_base_file)
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
@@ -279,7 +279,7 @@ def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to
     
     run_command_in_temp_dir(command, original_dir, handle_error=False, verbose=False)
 
-def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent_connectivity=0.5, connection_type="subset"):
+def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent_connectivity=0.5, connection_type="subset", arch_file =""):
 
     # Make sure the output directory exists
     os.makedirs(os.path.dirname(original_dir + output_file_path), exist_ok=True)
@@ -289,7 +289,9 @@ def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent
                "-f", original_dir + base_arch_path,
                "-o", original_dir + output_file_path,
                "-p", str(percent_connectivity),
-               "-c", connection_type]
+               "-c", connection_type,
+               "-a", arch_file,
+               ]
     
     run_command_in_temp_dir(command, original_dir, verbose=True)
 
