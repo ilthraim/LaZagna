@@ -15,7 +15,26 @@ import pstats
 from copy import deepcopy
 import argparse
 
-node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc"])
+args_parser = argparse.ArgumentParser(description="Generate 3D Switch Blocks (SBs) for a given VPR RR Graph without 3D SBs")
+
+args_parser.add_argument("-f", "--input_file",type=str, help="The file path to the VPR RR Graph XML file", required=True)
+args_parser.add_argument("-o", "--output_path", type=str, help="The file path to the output VPR RR Graph XML file", required=True)
+args_parser.add_argument("-p", "--percent_connectivity", type=float, help="The percentage of SBs on fabric that are 3D. Must be a float between 0 and 1", required=True)
+args_parser.add_argument("-c", "--connection_type", choices=["subset", "wilton", "wilton_2", "wilton_3", "custom"], help="The connection pattern to use for the 3D SBs. Options are: subset, wilton, wilton_2, wilton_3", required=True)
+args_parser.add_argument("-vp", "--vertical_connectivity_percentage", type=float, help="The percentage of channels at each SB that are connected vertically. Must be a float between 0 and 1", default=1.0)
+args_parser.add_argument("-v", "--verbose", help="Whether to print verbose output.", action="store_true")
+args_parser.add_argument("-a", "--arch_file", type=str, help="The file path to the VPR architecture XML file", required=True)
+args_parser.add_argument("--sb_3d_segment", type=str, help="The name of the 3D segment to use for the 3D SBs (Needs to be defined in the architecture XML file)", default="")
+args_parser.add_argument("--sb_3d_switch", type=str, help="The name of the 3D switch to use for the 3D SBs (Needs to be defined in the architecture XML file)", default="")
+# args_parser.add_argument("--connection_pattern", )
+
+#TODO: Make it actually be any number of crossings, currently either 1 or max
+args_parser.add_argument("--max_number_of_crossings", type=int, help="The maximum number of crossings to allow in a single connection in a 3D SB. -1 means there is no maximum, every signal can cross at every possible location, currently any other value is the same result as 1 (to be implemented)", default=-1)
+
+args = args_parser.parse_args()
+
+
+node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc", "segment"])
 edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_layer"])
 
 node_data = {}
@@ -30,6 +49,15 @@ ptc_counter = defaultdict(int)
 device_max_x = 0
 device_max_y = 0
 device_max_layer = 0
+
+# Segment ID to use for 3D SB connection
+segment_id = 0
+
+# Switch ID to use for 3D SB connection
+switch_id = 2
+
+# Dictionary to hold the segment name and it's connection pattern key: segment name, value: connection pattern (list of bools)
+pattern_dict = defaultdict(list)
 
 def print_verbose(*args, **kwargs):
     global verbose
@@ -144,9 +172,11 @@ def extract_nodes(root):
             device_max_y = max(device_max_y, int(xhigh))
 
         segment = node.find("segment")
-        segment_id = segment.get("segment_id")
-        if segment_id == "0":
-            add_node(node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node))
+        id_segment = int(segment.get("segment_id"))
+
+        # if segment_id == "0":
+
+        add_node(node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node, id_segment))
 
     
     end_time = time.time()
@@ -178,8 +208,8 @@ def extract_edges(root):
     end_time = time.time()
     print_verbose(f"Extracting Edges took { ((end_time - start_time) * 1000):0.2f} ms")
 
-def create_node(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node=0):
-    new_node = node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node)
+def create_node(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node=0, segment="0"):
+    new_node = node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node, segment)
     add_node(new_node)
     return new_node
 
@@ -193,7 +223,7 @@ TIMING_ELEMENT = etree.Element("timing", C="0", R="0")
 SEGMENT_ELEMENT = etree.Element("segment", segment_id="0")
 
 def node_xml_element(node):
-    
+    global segment_id
     # key = (node.layer, node.xlow, node.ylow)
     # ptc[key] += 1
 
@@ -206,7 +236,7 @@ def node_xml_element(node):
     new_node.append(etree.fromstring(loc_str))
 
     timing = etree.Element("timing", C="0", R="0")
-    segment = etree.Element("segment", segment_id="0")
+    segment = etree.Element("segment", segment_id=str(segment_id))
 
     # Add pre-created elements
     new_node.append(timing)
@@ -233,6 +263,30 @@ def create_edge(src_node, sink_node, src_layer, sink_layer):
     # add_edge((src_node, sink_node), new_edge)
     return new_edge
 
+def does_node_connect_to_sb(node, x, y):
+    global pattern_dict
+    node_segment = node.segment
+
+    if node_segment not in pattern_dict:
+        print(f"ERROR: Segment {node_segment} does not have a connection pattern")
+        exit(1)
+    
+    pattern = pattern_dict[node_segment]
+
+    if node.type == "CHANX":
+        pattern_index = x - int(node.xlow) + 1
+        if pattern_index < 0 or pattern_index >= len(pattern):
+            print(f"ERROR: Pattern index {pattern_index} out of bounds for node {node} with pattern {pattern}")
+            exit(1)
+        return pattern[pattern_index]
+    
+    else:
+        pattern_index = y - int(node.ylow) + 1
+        if pattern_index < 0 or pattern_index >= len(pattern):
+            print(f"ERROR: Pattern index {pattern_index} out of bounds for node {node} with pattern {pattern}")
+            exit(1)
+        return pattern[pattern_index]
+
 def find_chan_nodes(x, y):
     chan_nodes = []
     keys = [
@@ -249,8 +303,11 @@ def find_chan_nodes(x, y):
     for key in keys:
         chan_nodes.extend(node_index.get(key, []))
     
-    # Dumb to look at but this is just to remove any duplicates since if there's long wires they can appear at multiple different locations
-    return list(set(chan_nodes))
+    # remove duplicates
+    chan_nodes = list(set(chan_nodes))
+    chan_nodes = [node for node in chan_nodes if does_node_connect_to_sb(node, x, y)]
+
+    return chan_nodes
 
 def sort_chan_nodes_into_input_and_output(chan_nodes, x, y):
 
@@ -322,37 +379,9 @@ def sort_chan_nodes_into_input_and_output(chan_nodes, x, y):
     # A bit dumb to look at but this is just to remove any duplicates since if there's long wires they can appear at multiple different locations
     return list(set(layer_0_sb_input_nodes)), list(set(layer_0_sb_output_nodes)), list(set(layer_1_sb_input_nodes)), list(set(layer_1_sb_output_nodes))
 
-def connect_sb_nodes_full(input_nodes, output_nodes):
-    # global max_node_id
-    # for input_node in input_nodes:
-    #     for output_node in output_nodes:
-    #         input_none_node = create_node(max_node_id + 1, input_node.type, input_node.layer, input_node.xhigh, input_node.xlow, input_node.yhigh, input_node.ylow, input_node.side, "NONE")
-    #         output_none_node = create_node(max_node_id + 2, output_node.type, output_node.layer, output_node.xhigh, output_node.xlow, output_node.yhigh, output_node.ylow, output_node.side, "NONE")
-    #         max_node_id += 2
-    #         none_none_edge = create_edge(input_none_node.id, output_none_node.id, input_none_node.layer, output_none_node.layer)
-    #         chan_none_edge = create_edge(input_node.id, input_none_node.id, input_node.layer, input_none_node.layer)
-    #         none_chan_edge = create_edge(output_none_node.id, output_node.id, output_none_node.layer, output_node.layer)
-    #         yield (input_none_node, output_none_node, (none_none_edge, chan_none_edge, none_chan_edge))
-
-    global max_node_id
-    new_nodes = []
-    new_edges = []
-
-    for input_node in input_nodes:
-        for output_node in output_nodes:
-            input_none_node = create_node(max_node_id + 1, input_node.type, input_node.layer, input_node.xhigh, input_node.xlow, input_node.yhigh, input_node.ylow, input_node.side, "NONE")
-            output_none_node = create_node(max_node_id + 2, output_node.type, output_node.layer, output_node.xhigh, output_node.xlow, output_node.yhigh, output_node.ylow, output_node.side, "NONE")
-            max_node_id += 2
-            none_none_edge = create_edge(input_none_node.id, output_none_node.id, input_none_node.layer, output_none_node.layer)
-            chan_none_edge = create_edge(input_node.id, input_none_node.id, input_node.layer, input_none_node.layer)
-            none_chan_edge = create_edge(output_none_node.id, output_node.id, output_none_node.layer, output_node.layer)
-            new_nodes.extend((input_none_node, output_none_node))
-            new_edges.extend((none_none_edge, chan_none_edge, none_chan_edge))
-
-    return new_nodes, new_edges
-
 def connect_sb_nodes_combined(input_nodes, output_nodes, x, y, input_layer, output_layer):
     global max_node_id
+    global segment_id
 
     new_edges = [None] * (len(input_nodes) + len(output_nodes) + 1)
     edge_idx = 0
@@ -360,9 +389,9 @@ def connect_sb_nodes_combined(input_nodes, output_nodes, x, y, input_layer, outp
     key = (int(input_layer), int(x), int(y))
     ptc_val = ptc_counter[key]
     ptc_val += 1
-    input_layer_none_nodes =[create_node(max_node_id + 1, "CHANX", input_layer, x, x, y, y, "", "NONE", ptc_val)]
+    input_layer_none_nodes =[create_node(max_node_id + 1, "CHANX", input_layer, x, x, y, y, "", "NONE", ptc_val, segment_id)]
     ptc_val += 1
-    output_layer_none_nodes = [create_node(max_node_id + 2, "CHANX", output_layer, x, x, y, y, "", "NONE", ptc_val)]
+    output_layer_none_nodes = [create_node(max_node_id + 2, "CHANX", output_layer, x, x, y, y, "", "NONE", ptc_val, segment_id)]
 
     ptc_counter[key] = ptc_val
     
@@ -391,139 +420,15 @@ def write_sb_nodes(structure, nodes_to_write):
 
 # @profile    
 def write_sb_edges(structure, edges_to_write):
+    global switch_id
     rr_edges = structure.find("rr_edges")
     for edge in edges_to_write:
-        switch_id = 0
-        src_data = node_data[edge.src_node]
-        sink_data = node_data[edge.sink_node]
-        if src_data.direction == "NONE" and sink_data.direction != "NONE":
-            switch_id = 2
-        new_edge = edge_xml_element(edge, str(2))
+        new_edge = edge_xml_element(edge, str(switch_id))
         rr_edges.append(new_edge)
 
 def sort_nodes(nodes):
     #sort nodes by id in increasing order
     return sorted(nodes, key=operator.attrgetter("id"))
-
-def create_full_sb(input_nodes, output_nodes, x, y):
-    # Each input node will have 2 None nodes created one on each layer, and will connect to each output node that has the correct PTC value
-    # Number of connections to be made into output nodes = channel width (CW), AKA the corresponding PTC values
-
-    # For inputs:
-    #   - (x, y) CHANs have even ptc values starting from 0 and increasing
-    #   - (x + 1, y) & (x, y+1) CHANs have odd ptc values starting from 1 and increasing
-    # For outputs:
-    #   - (x, y) CHANs have odd ptc values starting from 1 and increasing
-    #   - (x + 1, y) & (x, y+1) CHANs have even ptc values starting from 0 and increasing
-
-    # Structure of thsi function:
-    # Identify input nodes that correspond to output nodes based on PTC values
-    #   * Ex: Inputs with PTC 0 (x,y) Chans and PTC 1 (x+1, y) & (x, y+1) Chans connect with outputs with PTC 1 (x, y) Chans and PTC 0 (x+1, y) & (x, y+1) Chans
-    #   * Group those together and call connect_sb_nodes_full for each input with all the outputs identified
-    
-
-    # First store the nodes in a list with increasing ptc values
-    x_y_chanx_input_nodes = []
-    x_y_chany_input_nodes = []
-    x_plus_1_y_chanx_input_nodes = []
-    x_y_plus_1_chany_input_nodes = []
-
-    x_y_chanx_output_nodes = []
-    x_y_chany_output_nodes = []
-    x_plus_1_y_chanx_output_nodes = []
-    x_y_plus_1_chany_output_nodes = []
-
-    for input_node in input_nodes:
-        if input_node.xlow == str(x) and input_node.ylow == str(y):
-            if input_node.type == "CHANX":
-                x_y_chanx_input_nodes.append(input_node)
-            else:
-                x_y_chany_input_nodes.append(input_node)
-        elif input_node.xlow == str(x + 1) and input_node.ylow == str(y) and input_node.type == "CHANX":
-            x_plus_1_y_chanx_input_nodes.append(input_node)
-        elif input_node.xlow == str(x) and input_node.ylow == str(y + 1) and input_node.type == "CHANY":
-            x_y_plus_1_chany_input_nodes.append(input_node)
-        else:
-            print_verbose(f"ERROR: Input node is not in the correct location, node: {input_node}")
-    
-    for output_node in output_nodes:
-        if output_node.xlow == str(x) and output_node.ylow == str(y):
-            if output_node.type == "CHANX":
-                x_y_chanx_output_nodes.append(output_node)
-            else:
-                x_y_chany_output_nodes.append(output_node)
-        elif output_node.xlow == str(x + 1) and output_node.ylow == str(y) and output_node.type == "CHANX":
-            x_plus_1_y_chanx_output_nodes.append(output_node)
-        elif output_node.xlow == str(x) and output_node.ylow == str(y + 1) and output_node.type == "CHANY":
-            x_y_plus_1_chany_output_nodes.append(output_node)
-        else:
-            print_verbose(f"ERROR: Output node is not in the correct location, node: {output_node}")
-    
-    # Sort the nodes by ptc
-    x_y_chanx_input_nodes = sorted(x_y_chanx_input_nodes, key=lambda x: int(x.ptc))
-    x_y_chany_input_nodes = sorted(x_y_chany_input_nodes, key=lambda x: int(x.ptc))
-    x_plus_1_y_chanx_input_nodes = sorted(x_plus_1_y_chanx_input_nodes, key=lambda x: int(x.ptc))
-    x_y_plus_1_chany_input_nodes = sorted(x_y_plus_1_chany_input_nodes, key=lambda x: int(x.ptc))
-
-    x_y_chanx_output_nodes = sorted(x_y_chanx_output_nodes, key=lambda x: int(x.ptc))
-    x_y_chany_output_nodes = sorted(x_y_chany_output_nodes, key=lambda x: int(x.ptc))
-    x_plus_1_y_chanx_output_nodes = sorted(x_plus_1_y_chanx_output_nodes, key=lambda x: int(x.ptc))
-    x_y_plus_1_chany_output_nodes = sorted(x_y_plus_1_chany_output_nodes, key=lambda x: int(x.ptc))
-
-    input_size = len(x_y_chanx_input_nodes) + len(x_y_chany_input_nodes) + len(x_plus_1_y_chanx_input_nodes) + len(x_y_plus_1_chany_input_nodes)
-    output_size = len(x_y_chanx_output_nodes) + len(x_y_chany_output_nodes) + len(x_plus_1_y_chanx_output_nodes) + len(x_y_plus_1_chany_output_nodes)
-
-    assert input_size == output_size
-    assert len(x_y_chanx_input_nodes) == len(x_y_chanx_output_nodes)
-    assert len(x_y_chany_input_nodes) == len(x_y_chany_output_nodes)
-    assert len(x_plus_1_y_chanx_input_nodes) == len(x_plus_1_y_chanx_output_nodes)
-    assert len(x_y_plus_1_chany_input_nodes) == len(x_y_plus_1_chany_output_nodes)
-
-    new_nodes = []
-    new_edges = []
-
-    max_len = max(len(x_y_chanx_input_nodes), len(x_y_chany_input_nodes), len(x_plus_1_y_chanx_input_nodes), len(x_y_plus_1_chany_input_nodes))
-
-    for i in range(max_len):
-        output_nodes = []
-        if i < len(x_y_chanx_output_nodes):
-            output_nodes.append(x_y_chanx_output_nodes[i])
-        if i < len(x_y_chany_output_nodes):
-            output_nodes.append(x_y_chany_output_nodes[i])
-        if i < len(x_plus_1_y_chanx_output_nodes):
-            output_nodes.append(x_plus_1_y_chanx_output_nodes[i])
-        if i < len(x_y_plus_1_chany_output_nodes):
-            output_nodes.append(x_y_plus_1_chany_output_nodes[i])
-
-        if i < len(x_y_chanx_input_nodes):
-            input_nodes = [x_y_chanx_input_nodes[i]]
-
-            created_nodes, created_edges = connect_sb_nodes_full(input_nodes, output_nodes)
-            new_nodes.extend(created_nodes)
-            new_edges.extend(created_edges)
-
-        if i < len(x_y_chany_input_nodes):
-            input_nodes = [x_y_chany_input_nodes[i]]
-
-            created_nodes, created_edges = connect_sb_nodes_full(input_nodes, output_nodes)
-            new_nodes.extend(created_nodes)
-            new_edges.extend(created_edges)
-
-        if i < len(x_plus_1_y_chanx_input_nodes):
-            input_nodes = [x_plus_1_y_chanx_input_nodes[i]]
-
-            created_nodes, created_edges = connect_sb_nodes_full(input_nodes, output_nodes)
-            new_nodes.extend(created_nodes)
-            new_edges.extend(created_edges)
-
-        if i < len(x_y_plus_1_chany_input_nodes):
-            input_nodes = [x_y_plus_1_chany_input_nodes[i]]
-
-            created_nodes, created_edges = connect_sb_nodes_full(input_nodes, output_nodes)
-            new_nodes.extend(created_nodes)
-            new_edges.extend(created_edges)
-
-    return new_nodes, new_edges
 
 def sort_chan_nodes_by_direction(chan_nodes, x, y):
     '''
@@ -600,7 +505,7 @@ def sort_chan_nodes_by_direction(chan_nodes, x, y):
 
     return x_y_chanx_chan_nodes, x_y_chany_chan_nodes, x_plus_1_y_chanx_chan_nodes, x_y_plus_1_chany_chan_nodes
 
-def create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer):
+def create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer, max_crossings=-1):
     input_layer_none_nodes = []
     output_layer_none_nodes = []
     new_edges = []
@@ -625,22 +530,38 @@ def create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_ch
         output_nodes_to_send = []
 
         if 0 < x_y_chanx_input_nodes_len:
-            input_nodes_to_send.append(x_y_chanx_input_nodes[i])
+            if max_crossings == -1 and x_y_chanx_input_nodes_len > max_output_len:
+                for j in range(int(x_y_chanx_input_nodes_len / max_output_len)):
+                    input_nodes_to_send.append(x_y_chanx_input_nodes[j % x_y_chanx_input_nodes_len])
+            else:
+                input_nodes_to_send.append(x_y_chanx_input_nodes[i % x_y_chanx_input_nodes_len])
         if 0 < x_y_chany_input_nodes_len:
-            input_nodes_to_send.append(x_y_chany_input_nodes[i])
+            if max_crossings == -1 and x_y_chany_input_nodes_len > max_output_len:
+                for j in range(int(x_y_chany_input_nodes_len / max_output_len)):
+                    input_nodes_to_send.append(x_y_chany_input_nodes[j % x_y_chany_input_nodes_len])
+            else:
+                input_nodes_to_send.append(x_y_chany_input_nodes[i % x_y_chany_input_nodes_len])
         if 0 < x_plus_1_y_chanx_input_nodes_len:
-            input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[i])
+            if max_crossings == -1 and x_plus_1_y_chanx_input_nodes_len > max_output_len:
+                for j in range(int(x_plus_1_y_chanx_input_nodes_len / max_output_len)):
+                    input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[j % x_plus_1_y_chanx_input_nodes_len])
+            else:
+                input_nodes_to_send.append(x_plus_1_y_chanx_input_nodes[i % x_plus_1_y_chanx_input_nodes_len])
         if 0 < x_y_plus_1_chany_input_nodes_len:
-            input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[i])
+            if max_crossings == -1 and x_y_plus_1_chany_input_nodes_len > max_output_len:
+                for j in range(int(x_y_plus_1_chany_input_nodes_len / max_output_len)):
+                    input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[j % x_y_plus_1_chany_input_nodes_len])
+            else:
+                input_nodes_to_send.append(x_y_plus_1_chany_input_nodes[i % x_y_plus_1_chany_input_nodes_len])
 
         if 0 < x_y_chanx_output_nodes_len:
-            output_nodes_to_send.append(x_y_chanx_output_nodes[i])
+            output_nodes_to_send.append(x_y_chanx_output_nodes[i % x_y_chanx_output_nodes_len])
         if 0 < x_y_chany_output_nodes_len:
-            output_nodes_to_send.append(x_y_chany_output_nodes[i])
+            output_nodes_to_send.append(x_y_chany_output_nodes[i % x_y_chany_output_nodes_len])
         if 0 < x_plus_1_y_chanx_output_nodes_len:
-            output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[i])
+            output_nodes_to_send.append(x_plus_1_y_chanx_output_nodes[i % x_plus_1_y_chanx_output_nodes_len])
         if 0 < x_y_plus_1_chany_output_nodes_len:
-            output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[i])
+            output_nodes_to_send.append(x_y_plus_1_chany_output_nodes[i % x_y_plus_1_chany_output_nodes_len])
 
         input_layer_none_nodes_temp, output_layer_none_nodes_temp, new_edges_temp = connect_sb_nodes_combined(input_nodes_to_send, output_nodes_to_send, x, y, input_layer, output_layer)
         input_layer_none_nodes.extend(input_layer_none_nodes_temp)
@@ -798,7 +719,7 @@ def create_wilton_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_ch
     
     return input_layer_none_nodes, output_layer_none_nodes, new_edges
 
-def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer, connection_type="subset", vertical_connectivity_percentage=1):
+def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer, connection_type="subset", vertical_connectivity_percentage=1, max_number_of_crossings=-1):
     # need to figure out which nodes to connect together for larger than 2 CWs
 
     accepted_connection_types = ["subset", "wilton", "wilton_2", "wilton_3"]
@@ -865,7 +786,7 @@ def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_laye
     max_output_len = int(max(len(x_y_chanx_output_nodes), len(x_y_chany_output_nodes), len(x_plus_1_y_chanx_output_nodes), len(x_y_plus_1_chany_output_nodes)) * vertical_connectivity_percentage)
 
     if connection_type == "subset":
-        return create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
+        return create_subset_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer, max_crossings=max_number_of_crossings)
     elif connection_type == "wilton":
         return create_wilton_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer)
     elif connection_type == "wilton_2":
@@ -950,6 +871,8 @@ def create_sb(structure,  connection_type="subset", vertical_connectivity_percen
 
     global device_max_x, device_max_y
 
+    max_vertical_crossings = args.max_number_of_crossings
+
     number_sbs = device_max_x * device_max_y * percent_connectitivty
     print_iter = round(number_sbs / 5)
     # For each location, find all relevant chans that either enter or exit th SB
@@ -968,8 +891,8 @@ def create_sb(structure,  connection_type="subset", vertical_connectivity_percen
         new_edges_0 = []
         new_edges_1 = []
 
-        input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type, vertical_connectivity_percentage)
-        input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type, vertical_connectivity_percentage)
+        input_layer_0_none_nodes, output_layer_1_none_nodes, new_edges_0 = create_combined_sb(layer_0_sb_input_nodes, layer_1_sb_output_nodes, x, y, 0, 1, connection_type, vertical_connectivity_percentage, max_number_of_crossings=max_vertical_crossings)
+        input_layer_1_none_nodes, output_layer_0_none_nodes, new_edges_1 = create_combined_sb(layer_1_sb_input_nodes, layer_0_sb_output_nodes, x, y, 1, 0, connection_type, vertical_connectivity_percentage, max_number_of_crossings=max_vertical_crossings)
 
         print_verbose(f"{'*' * 10}")
 
@@ -1019,18 +942,71 @@ def create_sb(structure,  connection_type="subset", vertical_connectivity_percen
 
     print_verbose(f"Total number of SBs created: {num_created}")
 
+def extract_switch_and_segment(structure, segment_name, switch_name):
+    global pattern_dict
+    switch_list = structure.find('switches')
+
+    found_switch = False
+    found_segment = False
+
+    for switch in switch_list.findall('switch'):
+        name = switch.get('name')
+        if name == switch_name:
+            global switch_id
+            switch_id = int(switch.get('id'))
+            found_switch = True
+            break
+
+    if not found_switch and switch_name != "":
+        print(f"ERROR: Switch {switch_name} not found in architecture file.")
+        exit(1)
+
+    segment_list = structure.find('segments')
+
+    for segment in segment_list.findall('segment'):
+        name = segment.get('name')
+        id = int(segment.get('id'))
+        if name == segment_name:
+            global segment_id
+            segment_id = id
+            found_segment = True
+        
+        
+        pattern_dict[id] = pattern_dict.pop(name)
+
+    if not found_segment and segment_name != "":
+        print(f"ERROR: Segment {segment_name} not found in architecture file.")
+        exit(1)
+
+def parse_arch_xml(arch_file):
+    '''
+    Function to parse the architecture XML file. It looks for the SB connection pattern of the segments in the architecture.
+    As well as the segment id and the switch id for the 3D SBs (if defined by user), else it uses the first segment and switch it finds.
+    '''
+    global pattern_dict
+    print_verbose(f"Reading Architecture File: {arch_file}")
+    parser = etree.XMLParser(
+            remove_blank_text=True,
+            remove_comments=True,
+            collect_ids=False,
+            huge_tree=True,  # Allows for larger trees
+            resolve_entities=False  # Saves some memory
+        )
+
+    arch_tree = etree.parse(arch_file, parser)
+    arch_root = arch_tree.getroot()
+
+    
+
+    segment_list = arch_root.find("segmentlist")
+
+    for segment in segment_list.findall("segment"):
+        name = segment.get("name")
+        pattern = segment.find("sb").text
+        pattern = pattern.split(" ")
+        pattern_dict[name] = [True if x == "1" else False for x in pattern]
+           
 def main():
-    args_parser = argparse.ArgumentParser(description="Generate 3D Switch Blocks (SBs) for a given VPR RR Graph without 3D SBs")
-
-    args_parser.add_argument("-f", "--input_file",type=str, help="The file path to the VPR RR Graph XML file", required=True)
-    args_parser.add_argument("-o", "--output_path", type=str, help="The file path to the output VPR RR Graph XML file", required=True)
-    args_parser.add_argument("-p", "--percent_connectivity", type=float, help="The percentage of SBs on fabric that are 3D. Must be a float between 0 and 1", required=True)
-    args_parser.add_argument("-c", "--connection_type", choices=["subset", "wilton", "wilton_2", "wilton_3", "custom"], help="The connection pattern to use for the 3D SBs. Options are: subset, wilton, wilton_2, wilton_3", required=True)
-    args_parser.add_argument("-vp", "--vertical_connectivity_percentage", type=float, help="The percentage of channels at each SB that are connected vertically. Must be a float between 0 and 1", default=1.0)
-    args_parser.add_argument("-v", "--verbose", help="Whether to print verbose output.", action="store_true")
-
-    args = args_parser.parse_args()
-
     start_time = time.time()
     
     file_path = args.input_file
@@ -1043,9 +1019,15 @@ def main():
 
     vertical_connectivity_percentage = args.vertical_connectivity_percentage
 
+    arch_file = args.arch_file
+    segment_name = args.sb_3d_segment
+    switch_name = args.sb_3d_switch
+
     global verbose
 
     verbose = args.verbose
+
+    parse_arch_xml(arch_file)
 
     design_string = f"{file_path} with {(percent_connectitivty * 100):0.1f} SBs, connection type: {connection_type}, vertical connectivity percentage: {vertical_connectivity_percentage} outputting to {output_file_path}"
 
@@ -1060,6 +1042,9 @@ def main():
         )
 
     structure, tree = read_structure(file_path, parser)
+
+    extract_switch_and_segment(structure, segment_name, switch_name)
+
     extract_nodes(structure)
     create_sb(structure, connection_type, vertical_connectivity_percentage)
 

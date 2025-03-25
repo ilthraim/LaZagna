@@ -393,6 +393,9 @@ def find_num_interlayer_edges():
         src_layer = src_node_data.layer
         sink_layer = sink_node_data.layer
 
+        if sink_node_data.type == "IPIN" and (src_node_data.type != "CHANX" and src_node_data.type != "CHANY"):
+            print(f"Sink IPIN node {sink_node} is driven by {src_node_data.type} node {src_node}")
+
         if src_layer != sink_layer:
             interlayer_edges += 1
 
@@ -419,11 +422,13 @@ def main():
 
     interlayer = False
 
-    if len(sys.argv) == 3: #interlayer option
+    chan_only = False
+
+    if len(sys.argv) == 3: #interlayer or chan_only options
         if sys.argv[2] == "-i":
             interlayer = True
-        else:
-            interlayer = False
+        elif sys.argv[2] == "-c":
+            chan_only = True
     
 
 
@@ -524,6 +529,8 @@ def main():
                 print("\tNo sources\n")
             else:
                 for src_node in src_nodes:
+                    if chan_only and (node_data[src_node].type != "CHANX" and node_data[src_node].type != "CHANY"):
+                        continue
                     print(f"\tNode id: {src_node} type: {node_data[src_node].type} layer: {node_data[src_node].layer} xlow: {node_data[src_node].xlow} xhigh: {node_data[src_node].xhigh} ylow: {node_data[src_node].ylow} yhigh: {node_data[src_node].yhigh} side: {node_data[src_node].side} direction: {node_data[src_node].direction} ptc: {node_data[src_node].ptc} segment_id: {node_data[src_node].segment_id}\n")
 
             
@@ -532,6 +539,8 @@ def main():
                 print("\tNo sinks\n")
             else:
                 for sink_node in sink_nodes:
+                    if chan_only and (node_data[sink_node].type != "CHANX" and node_data[sink_node].type != "CHANY"):
+                        continue
                     print(f"\tNode id: {sink_node} type: {node_data[sink_node].type} layer: {node_data[sink_node].layer} xlow: {node_data[sink_node].xlow} xhigh: {node_data[sink_node].xhigh} ylow: {node_data[sink_node].ylow} yhigh: {node_data[sink_node].yhigh} side: {node_data[sink_node].side} direction: {node_data[sink_node].direction} ptc: {node_data[sink_node].ptc} segment_id: {node_data[sink_node].segment_id}\n")
             print("##########################################################################################\n")
         elif node_id == "-1":
