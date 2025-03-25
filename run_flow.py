@@ -121,6 +121,12 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     elif type_sb == "3d_cb_out_only":
         arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_cb_arch/" 
+    elif type_sb == "hybrid_cb":
+        input_file = original_dir + "/arch_files/templates/vtr_3d_cb_arch.xml"
+        output_file = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_arch_" + str(width) + "x" + str(height) + ".xml"
+    elif type_sb == "hybrid_cb_out":
+        input_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
+        output_file = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_out_arch_" + str(width) + "x" + str(height) + ".xml"
     else:
         arch_base_file = original_dir + "/arch_files/templates/vtr_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_arch/"
@@ -238,8 +244,8 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
 
     # Make tasks_run directory
     #Output folder name based on parameters and time of run
-    curr_time = time.strftime("%H:%M:%S", time.localtime())
-    folder_name = "3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num, additional_info=output_additional_info) + curr_time
+    curr_time = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
+    folder_name = "3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num, additional_info=output_additional_info) + "_" + curr_time
     os.makedirs(original_dir + "/tasks_run/" + folder_name, exist_ok=True)
     return original_dir + "/tasks_run/" + folder_name
 
