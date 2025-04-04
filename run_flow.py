@@ -113,22 +113,22 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     # Set the base arch file and output directory based on the type of switch block
     # Base arch layout will be modified to have the correct dimensions and then saved to the output directory
     if type_sb == "3d_cb":
-        arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_arch.xml"
+        arch_base_file = original_dir + "/arch_files/templates/basic/vtr_3d_cb_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_cb_arch/"
     elif type_sb == "2d":
-        arch_base_file = original_dir + "/arch_files/templates/vtr_2d_arch.xml"
+        arch_base_file = original_dir + "/arch_files/templates/basic/vtr_2d_arch.xml"
         arch_output_dir = original_dir + "/arch_files/2d_arch/" 
     elif type_sb == "3d_cb_out_only":
-        arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
+        arch_base_file = original_dir + "/arch_files/templates/basic/vtr_3d_cb_out_only_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_cb_arch/" 
     elif type_sb == "hybrid_cb":
-        arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_arch.xml"
+        arch_base_file = original_dir + "/arch_files/templates/basic/vtr_3d_cb_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_arch_" + str(width) + "x" + str(height) + ".xml"
     elif type_sb == "hybrid_cb_out":
-        arch_base_file = original_dir + "/arch_files/templates/vtr_3d_cb_out_only_arch.xml"
+        arch_base_file = original_dir + "/arch_files/templates/basic/vtr_3d_cb_out_only_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_cb_arch/vtr_3d_hybrid_cb_out_arch_" + str(width) + "x" + str(height) + ".xml"
     else:
-        arch_base_file = original_dir + "/arch_files/templates/vtr_arch.xml"
+        arch_base_file = original_dir + "/arch_files/templates/basic/vtr_arch.xml"
         arch_output_dir = original_dir + "/arch_files/3d_arch/"
     
     if arch_file != "":
@@ -199,7 +199,7 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         run_time = (end_time - start_time) * 1000
         print_verbose(f"\tGenerating Base RRG took {run_time:0.2f} ms")
     else:
-        print_verbose(f"\tBase RRG previously generated")
+        print_verbose(f"\tBase RRG previously generated at {original_dir + rrg_path}")
 
     # if 3d rrg does not exist, create it
     if not os.path.exists(original_dir + rrg_3d_path) and type_sb != "3d_cb" and type_sb != "2d" and type_sb != "3d_cb_out_only":
@@ -210,7 +210,7 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         run_time = (end_time - start_time) * 1000
         print_verbose(f"\tGenerating 3D RRG from Base RRG took {run_time:0.2f} ms")    
     else:
-        print_verbose(f"\t3D RRG previously generated")
+        print_verbose(f"\t3D RRG previously generated at {original_dir + rrg_3d_path}")
 
     if type_sb == "3d_cb" or type_sb == "2d" or type_sb == "3d_cb_out_only":
         # Copy Base RRG into task (only need base since 3D SBs are not used)
@@ -276,6 +276,8 @@ def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to
                       original_dir + path_to_write_rrg,
                       "--clock_modeling",
                       "route"]
+    
+    print_verbose(f"Creating Base RRG with command: {' '.join(command)}")
     
     run_command_in_temp_dir(command, original_dir, handle_error=False, verbose=False)
 

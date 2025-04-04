@@ -1,6 +1,7 @@
 import os
 import csv
 import sys
+import re
 
 csv_folder = "results_csvs"
 
@@ -26,6 +27,8 @@ output_file = os.path.join(results_folder, input_folder + "_results.csv")
 # Initialize a list to store all rows
 all_data = []
 
+benchmark_name = re.compile(r"(.+)_results_.+\.csv")
+
 # Iterate through all files in the input folder
 for filename in os.listdir(input_folder):
     if filename.endswith(".csv"):
@@ -40,6 +43,12 @@ for filename in os.listdir(input_folder):
             if len(rows) >= 2:
                 headers = rows[0]
                 data = rows[1]
+
+                benchmark_match = benchmark_name.match(filename)
+                if benchmark_match:
+                    benchmark = benchmark_match.group(1)
+                    data.append(benchmark)
+                    headers.append("Benchmark Name")
 
                 # Modify the first data value as specified
                 original_value = data[0]

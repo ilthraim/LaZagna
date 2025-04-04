@@ -191,7 +191,7 @@
   </connection_block>
   <switch_block>
     <switch name="0" circuit_model_name="mux_2level_tapbuf"/>
-    <!-- <switch name="3d_mux" circuit_model_name="mux_2level_tapbuf"/> -->
+    <switch name="3d_mux" circuit_model_name="mux_2level_tapbuf"/>
   </switch_block>
 
   <routing_segment>

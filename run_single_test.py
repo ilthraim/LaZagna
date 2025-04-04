@@ -49,16 +49,17 @@ def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_di
         route_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/{extract_file_name(verilog_file)}.route"
         place_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/{extract_file_name(verilog_file)}.place"
 
-        command = ["cp", "-f", route_file_path, output_folder_name + "/"]
-        run_command_in_temp_dir(command, original_dir)
-
-        command = ["cp", "-f", place_file_path, output_folder_name + "/"]
-        run_command_in_temp_dir(command, original_dir)
-
-        # command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        # command = ["cp", "-f", route_file_path, output_folder_name + "/"]
         # run_command_in_temp_dir(command, original_dir)
 
-ITD_paper_top_modules = {"attention_layer.v":"attention_layer",
+        # command = ["cp", "-f", place_file_path, output_folder_name + "/"]
+        # run_command_in_temp_dir(command, original_dir)
+
+        command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        run_command_in_temp_dir(command, original_dir)
+
+ITD_paper_top_modules = {
+                         "attention_layer.v":"attention_layer",
                          "bnn.v":"bnn",
                          "bwave_like.fixed.large.v" :"NPU",
                          "bwave_like.fixed.small.v" :"NPU",
@@ -77,12 +78,49 @@ ITD_paper_top_modules = {"attention_layer.v":"attention_layer",
                          "proxy.7.v" :"top",
                          "reduction_layer.v" :"reduction_layer",
                          "robot_rl.v":"robot_maze",
-                         "softmax.v" :"SoftMax",
+                         "softmax.v" :"softmax",
                          "spmv.v" :"spmv",
                          "tdarknet_like.large.v" :"td_fused_top",
                          "tpu_like.large.os.v" :"top",
                          "tpu_like.large.ws.v" :"top",
-                         "tpu_like.small.ws.v":"top"}
+                         "tpu_like.small.ws.v":"top"
+                         }
+
+ITD_subset_top_modules = {
+                         "attention_layer.v":"attention_layer",
+                         "bnn.v":"bnn",
+                         "bwave_like.fixed.large.v" :"NPU",
+                         "bwave_like.fixed.small.v" :"NPU",
+                         "conv_layer_hls.v":"top",
+                         "conv_layer.v":"conv_layer",
+                         "dla_like.medium.v" :"DLA",
+                         "dla_like.small.v" :"DLA",
+                         "dnnweaver.v" :"dnnweaver2_controller",
+                         "eltwise_layer.v" :"eltwise_layer",
+                         "lstm.v" :"top",
+                         "proxy.5.v" :"top",
+                         "reduction_layer.v" :"reduction_layer",
+                         "robot_rl.v":"robot_maze",
+                         "softmax.v" :"softmax",
+                         "spmv.v" :"spmv",
+                         "tpu_like.large.os.v" :"top",
+                         "tpu_like.large.ws.v" :"top",
+                         "tpu_like.small.ws.v":"top"
+                         }
+
+ITD_quick_top_modules = {
+                         "attention_layer.v":"attention_layer",
+                         "bwave_like.fixed.small.v" :"NPU",
+                         "conv_layer_hls.v":"top",
+                         "conv_layer.v":"conv_layer",
+                         "dnnweaver.v" :"dnnweaver2_controller",
+                         "eltwise_layer.v" :"eltwise_layer",
+                         "reduction_layer.v" :"reduction_layer",
+                         "robot_rl.v":"robot_maze",
+                         "softmax.v" :"softmax",
+                         "spmv.v" :"spmv",
+                         "tpu_like.small.ws.v":"top"
+                         }
 
 VTR_benchmarks_top_modules = {"arm_core.v":"arm_core",
                               "bgm.v":"bgm",
@@ -116,24 +154,24 @@ VTR_benchmarks_top_modules = {"arm_core.v":"arm_core",
 def main():
     percents_to_test = [1, 0.66, 0.33]
     place_algs = ["cube_bb", "per_layer_bb"]
-    connection_types = ["wilton_2"]
-    type_sbs = ["2d", "3d_cb", "3d_cb_out_only", "combined"]
+    connection_types = ["wilton", "wilton_2"]
+    type_sbs = ["combined"]
     # type_sbs = ["combined"]
     # random_seed_array = [random.randint(0, 100000) for _ in range(0, 1)]
     random_seed_array = [1]
 
     tasks_start_time = time.time()
 
-    printing.verbose = False
+    printing.verbose = True
 
-    inner_num_to_test = [0.5, 1, 10, 100, 500, 1_000, 10_000]
+    inner_num_to_test = [10, 50]
 
-    channel_widths = [100,80,60,40]
+    # channel_widths = [60]
 
-    identifier_string = "inner_num_"
+    identifier_string = "dsp_bram_test_run"
     vpr_options = "--inner_num"
     for type_sb in type_sbs:
-        for k in range(len(channel_widths)):
+        for k in range(len(connection_types)):
             for j in range(len(percents_to_test)):
                 for i in range(len(place_algs)):
                     run_num = 1
@@ -147,23 +185,28 @@ def main():
 
                         cur_loop_identifier = identifier_string + str(l)
                         cur_loop_vpr_options = vpr_options + " " + str(l)
-
+                        # cur_loop_vpr_options = ""
                         original_dir = os.getcwd()
 
-                        verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
-                        benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" or "/ITD_paper" or "/VTR_benchmarks" (need to retrieve)
+                        verilog_benchmarks = True # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
+                        benchmarks_dir = original_dir + "/benchmarks" + "/ITD_subset" # "/MCNC_benchmarks" or "/koios" or "/ITD_paper" or "/VTR_benchmarks" (need to retrieve)
 
                         top_module_names = {}
                         if verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_paper":
                             top_module_names = ITD_paper_top_modules
                         elif verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/VTR_benchmarks":
                             top_module_names = VTR_benchmarks_top_modules
+                        elif verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_subset":
+                            top_module_names = ITD_subset_top_modules
 
 
                         if verilog_benchmarks:
                             blif_files = get_files_with_extension(benchmarks_dir, ".v")
                             verilog_files = get_files_with_extension(benchmarks_dir, ".v")
                             act_files = get_files_with_extension(benchmarks_dir, ".v")
+                            # blif_files = ['/home/Ismael/3DFADE/benchmarks/ITD_paper/eltwise_layer.v']
+                            # verilog_files = ['/home/Ismael/3DFADE/benchmarks/ITD_paper/eltwise_layer.v']
+                            # act_files = ['/home/Ismael/3DFADE/benchmarks/ITD_paper/eltwise_layer.v']
                         else:
                             blif_files = get_files_with_extension(benchmarks_dir, ".blif")
                             verilog_files = get_files_with_extension(benchmarks_dir, ".v")
@@ -171,19 +214,19 @@ def main():
 
 
 
-                        new_width = 25     # Set your desired width
-                        new_height = 25   # Set your desired height
+                        new_width = 100     # Set your desired width
+                        new_height = 100   # Set your desired height
 
-                        channel_width = channel_widths[k]
+                        channel_width = 300
                         # type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
                         percent_connectivity = percents_to_test[j]
                         place_algorithm = place_algs[i] # "cube_bb" or "per_layer_bb"
 
-                        if (type_sb == "3d_cb" or type_sb == "3d_cb_out_only" or type_sb == "2d") and percent_connectivity != 1:
-                            print_verbose(f"2D, 3D CB, and 3D CB Out Only only support 100% connectivity. Skipping {percent_connectivity}% connectivity")
+                        if (type_sb == "3d_cb" or type_sb == "3d_cb_out_only" or type_sb == "2d") and (percent_connectivity != 1 or connection_types[k] != "subset"):
+                            print_verbose(f"2D, 3D CB, and 3D CB Out Only only support 100% connectivity with subset SB connection. Skipping {percent_connectivity}% connectivity and {connection_types[k]} connection type")
                             continue
 
-                        connection_type = "wilton_2" # "subset" or "wilton" or "wilton_2"
+                        connection_type = connection_types[k]
 
                         # if (type_sb == "3d_cb" or type_sb == "3d_cb_out_only" or type_sb == "2d") and connection_type != "subset":
                         #     print_verbose(f"2D, 3D CB, and 3D CB Out don't care about connection type. Skipping {connection_type} connection type since it's not subset")
@@ -196,12 +239,19 @@ def main():
                         # connection_type = "subset"
 
                         if type_sb == "2d":
-                            new_width=35
-                            new_height=35
-
-                        # arch_file = original_dir + "/arch_files/koios_3d/3d_template_inter_die_k6FracN10LB_mem20k_complexDSP_customSB_7nm.xml"
-
+                            new_width=141
+                            new_height=141
+                        
                         arch_file = ""
+                        # arch_file = original_dir + "/arch_files/koios_3d/3d_template_inter_die_k6FracN10LB_mem20k_complexDSP_customSB_7nm.xml"
+                        if type_sb == "3d_cb":
+                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+                        elif type_sb == "3d_cb_out_only":
+                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
+                        elif type_sb == "2d":
+                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
+                        elif type_sb == "combined":
+                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
 
                         legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
                         if type_sb not in legal_choices:    
@@ -210,7 +260,7 @@ def main():
 
                         print(f"Running with options: Width: {new_width}, Height: {new_height}, Channel Width: {channel_width}, Percent Connectivity: {percent_connectivity}, Place Algorithm: {place_algorithm}, Connection Type: {connection_type}, SB Type: {type_sb} with extra VPR options: {cur_loop_vpr_options} and identifier: {cur_loop_identifier}")
 
-                        task_run_folder = setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks, connection_type=connection_type, arch_file=arch_file, random_seed=1, run_num=run_num, extra_vpr_options=cur_loop_vpr_options, output_additional_info=cur_loop_identifier)
+                        task_run_folder = setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks, connection_type=connection_type, arch_file=arch_file, random_seed=random_seed_array[0], run_num=run_num, extra_vpr_options=cur_loop_vpr_options, output_additional_info=cur_loop_identifier)
 
                         # Parallelized
                         with ThreadPoolExecutor() as executor:
