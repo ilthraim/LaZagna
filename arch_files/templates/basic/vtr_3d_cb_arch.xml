@@ -143,6 +143,14 @@
     <switch type="mux" name="ipin_cblock" R="2231.5" Cout="0." Cin="1.47e-15" Tdel="7.247000e-11" mux_trans_size="1.222260" buf_size="auto"/>
     <!-- <switch type="mux" name="3d_mux" R="551" Cin=".77e-15" Cout="4e-15" Tdel="58e-12" mux_trans_size="2.630740" buf_size="27.645901"/>
     <switch type="mux" name="3d_cb" R="551" Cin=".77e-15" Cout="4e-15" Tdel="58e-12" mux_trans_size="2.630740" buf_size="27.645901"/> -->
+
+    <!-- Special Switch only used by 3D SBs, it's delay is generated as a ratio from that of the 2D mux, by default if not specifed the first mux is used as the basis for the delay calculation.
+          The delay of this switch is actually 1/3 of the desired delay since there are 3 switches in series to drive interlayer connections. Since interlayer SB connections are like the following:
+          Horziontal Routing Channel on layer X -> None node at layer X -> None node at layer X+1 -> Vertical Routing Channel on layer X+1
+
+          Notice the 3 switches in series, the first one is the horizontal routing channel on layer X, the second one is the None node at layer X, and the third one is the None node at layer X+1. 
+     -->
+    <switch type="mux" name="3D_SB_switch" R="0.0" Cout="0.0" Cin="0.0" Tdel="0.0" mux_trans_size="0.0" buf_size="0.0"/>
   </switchlist>
   <segmentlist>
     <!--- VB & JL: using ITRS metal stack data, 96 nm half pitch wires, which are intermediate metal width/space.  
@@ -151,6 +159,14 @@
     <segment name="L4" freq="1.000000" length="1" type="unidir" Rmetal="101" Cmetal="22.5e-15">
       <mux name="0"/>
       <mux_inter_die name="0"/>
+      <sb type="pattern">1 1</sb>
+      <cb type="pattern">1</cb>
+    </segment>
+
+    <!-- Segment that is used to drive 3D SB connections only by default if no other segment name is specified. -->
+    <segment name="3D_SB_connection" freq="0" length="1" type="unidir" Rmetal="0.0" Cmetal="0.0">
+      <mux name="3D_SB_switch"/>
+      <mux_inter_die name="3D_SB_switch"/>
       <sb type="pattern">1 1</sb>
       <cb type="pattern">1</cb>
     </segment>
