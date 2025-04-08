@@ -8,23 +8,23 @@ from run_flow import *
 from printing import print_verbose
 import printing
 
-def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_dir="", width="", height="", channel_width="", type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False, connection_type="subset", benchmark_top_name="", output_folder_name="", run_number=1, output_additional_info=""):
+def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_dir="", width="", height="", channel_width="", type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False, connection_type="subset", benchmark_top_name="", output_folder_name="", run_number=1, output_additional_info="", temp_template_dir=""):
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_task_dir = os.path.join(temp_dir, "task")
         # copy config
         os.makedirs(temp_task_dir, exist_ok=True)
 
-        command = ["cp", "-r", original_dir + "/task/config", temp_task_dir + "/config"]
+        command = ["cp", "-r", temp_template_dir + "/task/config", temp_task_dir + "/config"]
         run_command_in_temp_dir(command, original_dir)
 
         os.makedirs(temp_task_dir + "/designs", exist_ok=True)
 
         # copy script and designs
-        command = ["cp", original_dir + "/task/designs/bitstream_script.openfpga", original_dir + "/task/designs/vtr_arch.xml", original_dir + "/task/designs/openfpga_arch.xml", original_dir + "/task/designs/auto_sim_openfpga.xml", temp_task_dir + "/designs/"]
+        command = ["cp", temp_template_dir + "/task/designs/bitstream_script.openfpga", temp_template_dir + "/task/designs/vtr_arch.xml", temp_template_dir + "/task/designs/openfpga_arch.xml", temp_template_dir + "/task/designs/auto_sim_openfpga.xml", temp_task_dir + "/designs/"]
         run_command_in_temp_dir(command, original_dir)
 
         # design_variables file
-        command = ["cp", original_dir + "/task/design_variables.yml", temp_task_dir]
+        command = ["cp", temp_template_dir + "/task/design_variables.yml", temp_task_dir]
         run_command_in_temp_dir(command, original_dir)
 
         if verilog_benchmarks:
@@ -46,17 +46,24 @@ def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_di
 
         # copy task folder for reference
 
+        # interesting files for me
         route_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/{extract_file_name(verilog_file)}.route"
         place_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/{extract_file_name(verilog_file)}.place"
+        timing_results_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/report_timing.setup.rpt"
 
-        # command = ["cp", "-f", route_file_path, output_folder_name + "/"]
-        # run_command_in_temp_dir(command, original_dir)
+        os.makedirs(output_folder_name + "/task_" + extract_file_name(verilog_file), exist_ok=True)
 
-        # command = ["cp", "-f", place_file_path, output_folder_name + "/"]
-        # run_command_in_temp_dir(command, original_dir)
-
-        command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        command = ["cp", "-f", route_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
         run_command_in_temp_dir(command, original_dir)
+
+        command = ["cp", "-f", place_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        run_command_in_temp_dir(command, original_dir)
+
+        command = ["cp", "-f", timing_results_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        run_command_in_temp_dir(command, original_dir)
+
+        # command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        # run_command_in_temp_dir(command, original_dir)
 
 ITD_paper_top_modules = {
                          "attention_layer.v":"attention_layer",
@@ -152,138 +159,210 @@ VTR_benchmarks_top_modules = {"arm_core.v":"arm_core",
                               "tpu.32x32.int8.v":"top"}
 
 def main():
-    percents_to_test = [1, 0.66, 0.33]
+    percents_to_test = [1.0, 0.66, 0.33]
+    # percents_to_test = [1.0]
+
     place_algs = ["cube_bb", "per_layer_bb"]
-    connection_types = ["wilton", "wilton_2"]
-    type_sbs = ["combined"]
+    # place_algs = ["cube_bb"]
+
+    connection_types = ["subset", "wilton_2"]
+    # connection_types = ["subset"]
+
+    type_sbs = ["2d", "3d_cb", "3d_cb_out_only", "combined"]
     # type_sbs = ["combined"]
-    # random_seed_array = [random.randint(0, 100000) for _ in range(0, 1)]
-    random_seed_array = [1]
+
+    random_seed_array = [random.randint(0, 100000) for _ in range(0, 10)]
+    # random_seed_array = [1]
 
     tasks_start_time = time.time()
 
     printing.verbose = True
 
-    inner_num_to_test = [10, 50]
+    inner_num_to_test = [0.5]
 
-    # channel_widths = [60]
+    width = 25
 
-    identifier_string = "dsp_bram_test_run"
+    height = 25
+
+    width_2d = 35
+
+    height_2d = 35
+
+    channel_width = 100
+
+    vertical_connectivity = 1
+
+    sb_switch_name = ""
+
+    sb_segment_name = ""
+
+    sb_input_pattern = []
+    sb_output_pattern = []
+
+    sb_location_pattern = "repeated_interval"
+
+    sb_grid_csv_path=""
+
+    # TO BE ADDED AS A PARAMETER
+    vertical_delay_ratio = 1
+
+    original_dir = os.getcwd()
+
+    is_verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
+    benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" or "/ITD_paper" or "/ITD_subset" or "/ITD_quick" or "/VTR_benchmarks"
+    
+    # arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+
+    identifier_string = "dsp_bram_random_seeds_run"
+    identifier_string = "multi_run_test"
+    
     vpr_options = "--inner_num"
-    for type_sb in type_sbs:
+
+    for l in inner_num_to_test:
         for k in range(len(connection_types)):
             for j in range(len(percents_to_test)):
-                for i in range(len(place_algs)):
-                    run_num = 1
-
+                for place_algorithm in place_algs:
                     
-                    
-                    for l in inner_num_to_test:
-                        
 
-                        main_start_time = time.time()
+                    for type_sb in type_sbs:
 
-                        cur_loop_identifier = identifier_string + str(l)
-                        cur_loop_vpr_options = vpr_options + " " + str(l)
-                        # cur_loop_vpr_options = ""
-                        original_dir = os.getcwd()
+                        run_num = 1
 
-                        verilog_benchmarks = True # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
-                        benchmarks_dir = original_dir + "/benchmarks" + "/ITD_subset" # "/MCNC_benchmarks" or "/koios" or "/ITD_paper" or "/VTR_benchmarks" (need to retrieve)
+                        for seed in random_seed_array:
+                            
 
-                        top_module_names = {}
-                        if verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_paper":
-                            top_module_names = ITD_paper_top_modules
-                        elif verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/VTR_benchmarks":
-                            top_module_names = VTR_benchmarks_top_modules
-                        elif verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_subset":
-                            top_module_names = ITD_subset_top_modules
+                            main_start_time = time.time()
+
+                            cur_loop_identifier = identifier_string + str(l) 
+                            cur_loop_vpr_options = vpr_options + " " + str(l)
+
+                            top_module_names = {}
+
+                            if is_verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_paper":
+                                top_module_names = ITD_paper_top_modules
+                            elif is_verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/VTR_benchmarks":
+                                top_module_names = VTR_benchmarks_top_modules
+                            elif is_verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_subset":
+                                top_module_names = ITD_subset_top_modules
+                            elif is_verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_quick":
+                                top_module_names = ITD_quick_top_modules
+
+                            if is_verilog_benchmarks:
+                                blif_files = get_files_with_extension(benchmarks_dir, ".v")
+                                verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+                                act_files = get_files_with_extension(benchmarks_dir, ".v")
+
+                            else:
+                                blif_files = get_files_with_extension(benchmarks_dir, ".blif")
+                                verilog_files = get_files_with_extension(benchmarks_dir, ".v")
+                                act_files = get_files_with_extension(benchmarks_dir, ".act")
+
+                            percent_connectivity = percents_to_test[j]
+
+                            connection_type = connection_types[k]
+
+                            if (type_sb == "3d_cb" or type_sb == "3d_cb_out_only" or type_sb == "2d") and (percent_connectivity != 1 or connection_types[k] != "subset"):
+                                print_verbose(f"2D, 3D CB, and 3D CB Out Only only support 100% connectivity with subset SB connection. Skipping {percent_connectivity}% connectivity and {connection_types[k]} connection type")
+                                continue
+
+                            if (type_sb == "2d" and place_algorithm != "cube_bb"):
+                                print_verbose(f"2D,doesn't care about placement algorithm cost function. Skipping {place_algorithm} since it's not cube_bb")
+                                continue
+                            
+                            if type_sb == "2d":
+                                width = width_2d
+                                height = height_2d
+                            
+                            arch_file = ""
+                            if type_sb == "3d_cb":
+                                arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+
+                            elif type_sb == "3d_cb_out_only":
+                                arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
+
+                            elif type_sb == "2d":
+                                arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
+
+                            elif type_sb == "combined":
+                                arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
 
 
-                        if verilog_benchmarks:
-                            blif_files = get_files_with_extension(benchmarks_dir, ".v")
-                            verilog_files = get_files_with_extension(benchmarks_dir, ".v")
-                            act_files = get_files_with_extension(benchmarks_dir, ".v")
-                            # blif_files = ['/home/Ismael/3DFADE/benchmarks/ITD_paper/eltwise_layer.v']
-                            # verilog_files = ['/home/Ismael/3DFADE/benchmarks/ITD_paper/eltwise_layer.v']
-                            # act_files = ['/home/Ismael/3DFADE/benchmarks/ITD_paper/eltwise_layer.v']
-                        else:
-                            blif_files = get_files_with_extension(benchmarks_dir, ".blif")
-                            verilog_files = get_files_with_extension(benchmarks_dir, ".v")
-                            act_files = get_files_with_extension(benchmarks_dir, ".act")
+                            legal_choices = ["combined", "3d_cb", "2d", "3d_cb_out_only"]
+                            if type_sb not in legal_choices:    
+                                print(f"ERROR: Invalid SB type: {type_sb}. Please choose from {legal_choices}")
+                                exit(1)
 
+                            print(f"Running with options: Width: {width}, Height: {height}, Channel Width: {channel_width}, Percent Connectivity: {percent_connectivity}, Place Algorithm: {place_algorithm}, Connection Type: {connection_type}, SB Type: {type_sb} with extra VPR options: {cur_loop_vpr_options} and identifier: {cur_loop_identifier}")
 
+                            with tempfile.TemporaryDirectory() as outer_temp_dir:
 
-                        new_width = 100     # Set your desired width
-                        new_height = 100   # Set your desired height
+                                task_run_folder = setup_flow(
+                                                            original_dir=original_dir, 
+                                                            width=width, 
+                                                            height=height, 
+                                                            channel_width=channel_width, 
+                                                            type_sb=type_sb, 
+                                                            percent_connectivity=percent_connectivity, 
+                                                            place_algorithm=place_algorithm, 
+                                                            is_verilog_benchmarks=is_verilog_benchmarks, 
+                                                            connection_type=connection_type, 
+                                                            arch_file=arch_file, 
+                                                            random_seed=seed, 
+                                                            run_num=run_num, 
+                                                            extra_vpr_options=cur_loop_vpr_options, 
+                                                            output_additional_info=cur_loop_identifier, 
+                                                            temp_dir=outer_temp_dir,
+                                                            vertical_connectivity=vertical_connectivity,
+                                                            sb_switch_name=sb_switch_name,
+                                                            sb_segment_name=sb_segment_name,
+                                                            sb_input_pattern=sb_input_pattern,
+                                                            sb_output_pattern=sb_output_pattern,
+                                                            sb_location_pattern=sb_location_pattern,
+                                                            sb_grid_csv_path=sb_grid_csv_path
+                                                            )  
 
-                        channel_width = 300
-                        # type_sb = "combined" # "full" or "combined" or "3d_cb" or "2d" or "3d_cb_out_only"
-                        percent_connectivity = percents_to_test[j]
-                        place_algorithm = place_algs[i] # "cube_bb" or "per_layer_bb"
+                                # Parallelized
+                                with ThreadPoolExecutor() as executor:
+                                    futures = []
+                                    for i in range(len(blif_files)):
+                                        futures.append(
+                                            executor.submit(
+                                                run_one_benchmark,
+                                                i,                                                            # benchmark index
+                                                blif_file=blif_files[i],                                      # blif file path
+                                                verilog_file=verilog_files[i],                                # verilog file path
+                                                act_file=act_files[i],                                        # activity file path
+                                                original_dir=original_dir,                                    # original directory
+                                                width=width,                                              # width parameter
+                                                height=height,                                            # height parameter
+                                                channel_width=channel_width,                                  # channel width
+                                                type_sb=type_sb,                                              # switch block type
+                                                percent_connectivity=percent_connectivity,                    # connectivity percentage
+                                                place_algorithm=place_algorithm,                              # placement algorithm
+                                                verilog_benchmarks=is_verilog_benchmarks,                        # using verilog benchmarks?
+                                                connection_type=connection_type,                              # connection type
+                                                benchmark_top_name=top_module_names.get(os.path.basename(verilog_files[i]), ""),  # top module name
+                                                output_folder_name=task_run_folder,                           # output folder
+                                                run_number=run_num,                                           # run number
+                                                output_additional_info=cur_loop_identifier,                   # additional info
+                                                temp_template_dir=outer_temp_dir                              # template directory
+                                            )
+                                        )
 
-                        if (type_sb == "3d_cb" or type_sb == "3d_cb_out_only" or type_sb == "2d") and (percent_connectivity != 1 or connection_types[k] != "subset"):
-                            print_verbose(f"2D, 3D CB, and 3D CB Out Only only support 100% connectivity with subset SB connection. Skipping {percent_connectivity}% connectivity and {connection_types[k]} connection type")
-                            continue
+                                    for future in futures:
+                                        future.result()
 
-                        connection_type = connection_types[k]
+                            # Serialized
+                            # for i in range(len(blif_files)):
+                            #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type)
+                            
+                            main_end_time = time.time()
 
-                        # if (type_sb == "3d_cb" or type_sb == "3d_cb_out_only" or type_sb == "2d") and connection_type != "subset":
-                        #     print_verbose(f"2D, 3D CB, and 3D CB Out don't care about connection type. Skipping {connection_type} connection type since it's not subset")
-                        #     continue
+                            main_runtime = (main_end_time - main_start_time) * 1000
 
-                        if (type_sb == "2d" and place_algorithm != "cube_bb"):
-                            print_verbose(f"2D,doesn't care about placement algorithm cost function. Skipping {place_algorithm} since it's not cube_bb")
-                            continue
-                        
-                        # connection_type = "subset"
+                            print(f"\nRunning all tasks took: {main_runtime:.2f} ms\n")
 
-                        if type_sb == "2d":
-                            new_width=141
-                            new_height=141
-                        
-                        arch_file = ""
-                        # arch_file = original_dir + "/arch_files/koios_3d/3d_template_inter_die_k6FracN10LB_mem20k_complexDSP_customSB_7nm.xml"
-                        if type_sb == "3d_cb":
-                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
-                        elif type_sb == "3d_cb_out_only":
-                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
-                        elif type_sb == "2d":
-                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
-                        elif type_sb == "combined":
-                            arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
-
-                        legal_choices = ["full", "combined", "3d_cb", "2d", "3d_cb_out_only"]
-                        if type_sb not in legal_choices:    
-                            print_verbose(f"Invalid SB type: {type_sb}. Please choose from {legal_choices}")
-                            return
-
-                        print(f"Running with options: Width: {new_width}, Height: {new_height}, Channel Width: {channel_width}, Percent Connectivity: {percent_connectivity}, Place Algorithm: {place_algorithm}, Connection Type: {connection_type}, SB Type: {type_sb} with extra VPR options: {cur_loop_vpr_options} and identifier: {cur_loop_identifier}")
-
-                        task_run_folder = setup_flow(original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, verilog_benchmarks=verilog_benchmarks, connection_type=connection_type, arch_file=arch_file, random_seed=random_seed_array[0], run_num=run_num, extra_vpr_options=cur_loop_vpr_options, output_additional_info=cur_loop_identifier)
-
-                        # Parallelized
-                        with ThreadPoolExecutor() as executor:
-                            futures = [
-                                executor.submit(run_one_benchmark, i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type, 
-                                                top_module_names[os.path.basename(verilog_files[i])] if verilog_benchmarks else [], task_run_folder, run_num, cur_loop_identifier)
-                                for i in range(len(blif_files))
-                            ]
-
-                            for future in futures:
-                                future.result()
-
-                        # Serialized
-                        # for i in range(len(blif_files)):
-                        #     run_one_benchmark(i, blif_files[i], verilog_files[i], act_files[i], original_dir, new_width, new_height, channel_width, type_sb, percent_connectivity, place_algorithm, verilog_benchmarks, connection_type)
-                        
-                        main_end_time = time.time()
-
-                        main_runtime = (main_end_time - main_start_time) * 1000
-
-                        print(f"\nRunning all tasks took: {main_runtime:.2f} ms\n")
-
-                        run_num += 1
+                            run_num += 1
 
     print("All tasks completed.")
     tasks_end_time = time.time()

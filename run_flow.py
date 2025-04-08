@@ -6,6 +6,8 @@ from arch_xml_modification import *
 from file_handling import *
 from script_editing import *
 from printing import print_verbose
+import shutil
+import sys
 
 and2_blif_path = "/benchmarks/and2/and2.blif"
 
@@ -23,7 +25,7 @@ def run_command_in_temp_dir(command, original_dir, handle_error=True, verbose=Fa
     if verbose:
         print_verbose("Running Command: ")
         command_string = " ".join(command)
-        print_verbose(f"\t{command_string}")
+        print_verbose(f"{command_string}")
     # Create a temporary directory
     with tempfile.TemporaryDirectory() as temporary_dir:
         try:
@@ -73,7 +75,7 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
     end_time = time.time()
 
     run_time = (end_time - start_time) * 1000
-    print_verbose(f"\tRunning OpenFPGA task for benchmark {benchmark_name} took {run_time:0.2f} ms")
+    print_verbose(f"Running OpenFPGA task for benchmark {benchmark_name} took {run_time:0.2f} ms")
 
     # Now copy results into somewhere else maybe?
     # Feels a bit sketch should automate it so the reuslts are auto placed into nice named area but oh well
@@ -81,7 +83,7 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
     results_path = "/results/3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num, additional_info=output_additional_info) + "/"
     result_file_name = benchmark_name + "_results_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num, additional_info=output_additional_info) + ".csv"
 
-    print_verbose(f"\Trying to copy for benchmark {benchmark_name} the results to {original_dir + results_path + result_file_name} from {temp_dir + task_result_path}")
+    print_verbose(f"Trying to copy for benchmark {benchmark_name} the results to {original_dir + results_path + result_file_name} from {temp_dir + task_result_path}")
 
     # Make sure the results directory exists
     os.makedirs(original_dir + "/results", exist_ok=True)
@@ -92,20 +94,24 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tCopying the results for benchmark {benchmark_name} to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
+        print_verbose(f"Copying the results for benchmark {benchmark_name} to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
     else:
         start_time = time.time()
         generate_empty_results(original_dir, results_path, result_file_name, benchmark_name)
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tGenerating Empty Results file and writing to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
+        print_verbose(f"Generating Empty Results file and writing to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
 
-def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", verilog_benchmarks=False, connection_type="subset", arch_file="", random_seed=1, run_num=1, extra_vpr_options="", output_additional_info=""):
+def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", is_verilog_benchmarks=False, connection_type="subset", arch_file="", random_seed=1, run_num=1, extra_vpr_options="", output_additional_info="", temp_dir="", vertical_connectivity=1, sb_switch_name="", sb_segment_name="", sb_input_pattern=[], sb_output_pattern=[], sb_location_pattern="repeated_interval", sb_grid_csv_path=""):
     
+
+    # Copy the task directory to the temp directory and work on it from there
+    shutil.copytree(original_dir + "/task", temp_dir + "/task", dirs_exist_ok=True)
+
     # copy template script to designs
     # TODO: This is a bit sketchy, should make it more robust in the future to allow for multiple arch runs at the same time, no hard coding values
-    command = ["cp", original_dir + "/task/config_templates/bitstream_script_template.openfpga", original_dir + "/task/designs/bitstream_script.openfpga"]
+    command = ["cp", temp_dir + "/task/config_templates/bitstream_script_template.openfpga", temp_dir + "/task/designs/bitstream_script.openfpga"]
     run_command_in_temp_dir(command, original_dir)
 
     script_path ="/designs/bitstream_script.openfpga"
@@ -146,49 +152,82 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tLoading Base Arch XML took {run_time:0.2f} ms")
+        print_verbose(f"Loading Base Arch XML took {run_time:0.2f} ms")
 
         start_time = time.time()
         set_fixed_layout_dimensions(root, width=width, height=height)
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tModifiying Base Arch XML took {run_time:0.2f} ms")
+        print_verbose(f"Modifiying Base Arch XML took {run_time:0.2f} ms")
 
         start_time = time.time()
         save_xml(tree, arch_output_file_path)
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tSaving the modified Arch XML took {run_time:0.2f} ms")
+        print_verbose(f"Saving the modified Arch XML took {run_time:0.2f} ms")
     else:
-        print_verbose(f"\tModified Arch XML previously generated")
+        print_verbose(f"Modified Arch XML previously generated")
     
     # copy the modified arch file into the task
     # TODO: This is a bit sketchy, should make it more robust in the future to allow for multiple arch runs at the same time, no hard coding values
-    command = ["cp", arch_output_file_path, original_dir + "/task/designs/vtr_arch.xml"]
+    command = ["cp", arch_output_file_path, temp_dir + "/task/designs/vtr_arch.xml"]
     run_command_in_temp_dir(command, original_dir)
 
     relative_arch_path = os.path.relpath(arch_output_file_path, original_dir)
     relative_arch_path = "/" + relative_arch_path
 
     start_time = time.time()
-    append_cw_to_script(original_dir + "/task" + script_path, str(channel_width))
+    append_cw_to_script(temp_dir + "/task" + script_path, str(channel_width))
     end_time = time.time()
 
     run_time = (end_time - start_time) * 1000
-    print_verbose(f"\tAdding Channel Width to execution script took {run_time:0.2f} ms")
+    print_verbose(f"Adding Channel Width to execution script took {run_time:0.2f} ms")
 
     start_time = time.time()
-    append_place_algorithm_to_script(original_dir + "/task" + script_path, place_algorithm)
+    append_place_algorithm_to_script(temp_dir + "/task" + script_path, place_algorithm)
     end_time = time.time()
 
     run_time = (end_time - start_time) * 1000
-    print_verbose(f"\tAdding Placement Algorithm to execution script took {run_time:0.2f} ms")
+    print_verbose(f"Adding Placement Algorithm to execution script took {run_time:0.2f} ms")
 
     rrg_path = "/base_rrg/rrg_cw_" + str(channel_width) + "_" + arch_output_file_name
 
-    rrg_3d_path = "/rrg_3d/rrg_3d_" + type_sb + "_cw_" + str(channel_width) + "_" + str(int(percent_connectivity * 100)) + "percent_" + connection_type + "_" + arch_output_file_name
+    vertical_connectivity_string = "vp_" + str(vertical_connectivity) + "_"
+    if vertical_connectivity == 1:
+        vertical_connectivity_string = ""
+
+    sb_pattern_string = ""
+
+    # if the connection type is custom, add its pattern to the path
+    if connection_type == "custom":
+        if sb_input_pattern != []:
+            sb_input_pattern = [str(x) for x in sb_input_pattern]
+            sb_pattern_string = "_input_" + "_".join(sb_input_pattern)
+        else:
+            print("ERROR: No input pattern provided for custom connection type.")
+            exit(1)
+
+        if sb_output_pattern != []:
+            sb_output_pattern = [str(x) for x in sb_output_pattern]
+            sb_pattern_string += "_output_" + "_".join(sb_output_pattern)
+        else:
+            print("ERROR: No output pattern provided for custom connection type.")
+            exit(1)
+
+    # if the location pattern is custom, add its pattern to the path
+    if sb_location_pattern != "repeated_interval":
+        if sb_location_pattern == "custom":
+            if sb_grid_csv_path == "":
+                print("ERROR: No custom SB grid CSV path provided.")
+                exit(1)
+            else:
+                sb_pattern_string += "_" + sb_location_pattern + "_" + os.path.splitext(os.path.basename(sb_grid_csv_path))[0]
+        else:
+            sb_pattern_string += "_" + sb_location_pattern
+
+    rrg_3d_path = "/rrg_3d/rrg_3d_" + type_sb + "_cw_" + str(channel_width) + "_" + str(int(percent_connectivity * 100)) + "percent_" + connection_type + sb_pattern_string + "_" + vertical_connectivity_string + arch_output_file_name
 
     # if base rrg does not exist, create it (AKA run VTR)
     if not os.path.exists(original_dir + rrg_path):
@@ -197,50 +236,49 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tGenerating Base RRG took {run_time:0.2f} ms")
+        print_verbose(f"Generating Base RRG took {run_time:0.2f} ms")
     else:
-        print_verbose(f"\tBase RRG previously generated at {original_dir + rrg_path}")
+        print_verbose(f"Base RRG previously generated at {original_dir + rrg_path}")
 
     # if 3d rrg does not exist, create it
     if not os.path.exists(original_dir + rrg_3d_path) and type_sb != "3d_cb" and type_sb != "2d" and type_sb != "3d_cb_out_only":
         start_time = time.time()
-        create_custom_3d_rrg(rrg_path, rrg_3d_path, original_dir, percent_connectivity, connection_type, arch_file=arch_base_file)
+        create_custom_3d_rrg(rrg_path, rrg_3d_path, original_dir, percent_connectivity, connection_type, arch_file=arch_base_file, vertical_connectivity=vertical_connectivity, sb_switch_name=sb_switch_name, sb_segment_name=sb_segment_name, sb_input_pattern=sb_input_pattern, sb_output_pattern=sb_output_pattern, sb_location_pattern=sb_location_pattern, sb_grid_csv_path=sb_grid_csv_path)
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
-        print_verbose(f"\tGenerating 3D RRG from Base RRG took {run_time:0.2f} ms")    
+        print_verbose(f"Generating 3D RRG from Base RRG took {run_time:0.2f} ms")    
     else:
-        print_verbose(f"\t3D RRG previously generated at {original_dir + rrg_3d_path}")
+        if type_sb == "3d_cb" or type_sb == "2d" or type_sb == "3d_cb_out_only":
+            print_verbose(f"3D RRG not generated since type {type_sb} does not need a custom RRG, using base RRG")
+        else:
+            print_verbose(f"3D RRG previously generated at {original_dir + rrg_3d_path}")
 
     if type_sb == "3d_cb" or type_sb == "2d" or type_sb == "3d_cb_out_only":
-        # Copy Base RRG into task (only need base since 3D SBs are not used)
-        # TODO: This is a bit sketchy, should make it more robust in the future to allow for multiple arch runs at the same time, no hard coding values
-        command = ["cp", original_dir + rrg_path, original_dir + "/task/designs/rr_graph.xml"]
-        run_command_in_temp_dir(command, original_dir)
+        # Copy Base RRG path into task script (only need base since 3D SBs are not used)
+        append_rrg_to_script(temp_dir + "/task" + script_path, original_dir + rrg_path)
+
     else:
-        # Copy 3D RRG into task
-        # TODO: This is a bit sketchy, should make it more robust in the future to allow for multiple arch runs at the same time, no hard coding values
-        command = ["cp", original_dir + rrg_3d_path, original_dir + "/task/designs/rr_graph.xml"]
-        run_command_in_temp_dir(command, original_dir)
+        # Copy 3D RRG path into task script
+        append_rrg_to_script(temp_dir + "/task" + script_path, original_dir + rrg_3d_path)
 
-    # add the 3D RRG to the script
-    append_rrg_to_script(original_dir + "/task" + script_path, original_dir + "/task/designs/rr_graph.xml")
 
-    if verilog_benchmarks:
+
+    if is_verilog_benchmarks:
         # TODO: This is a bit sketchy, should make it more robust in the future to allow for multiple arch runs at the same time, no hard coding values
-        command = ["cp", original_dir + "/task/config_templates/verilog_task.conf", original_dir + "/task/config/task.conf"]
+        command = ["cp", temp_dir + "/task/config_templates/verilog_task.conf", temp_dir + "/task/config/task.conf"]
         run_command_in_temp_dir(command, original_dir)
     else:
         # TODO: This is a bit sketchy, should make it more robust in the future to allow for multiple arch runs at the same time, no hard coding values
-        command = ["cp", original_dir + "/task/config_templates/blif_task.conf", original_dir + "/task/config/task.conf"]
+        command = ["cp", temp_dir + "/task/config_templates/blif_task.conf", temp_dir + "/task/config/task.conf"]
         run_command_in_temp_dir(command, original_dir)
 
     #append random seed to script
-    append_random_seed_to_script(original_dir + "/task" + script_path, random_seed)
+    append_random_seed_to_script(temp_dir + "/task" + script_path, random_seed)
 
     #append extra vpr options to script
     if extra_vpr_options != "":
-        append_extra_vpr_option_to_script(original_dir + "/task" + script_path, extra_vpr_options)
+        append_extra_vpr_option_to_script(temp_dir + "/task" + script_path, extra_vpr_options)
 
     # Make tasks_run directory
     #Output folder name based on parameters and time of run
@@ -248,19 +286,6 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
     folder_name = "3d_" + type_sb + "_cw_" + output_file_name(channel_width=channel_width, width=width, height=height, percent_connectivity=percent_connectivity, place_algorithm=place_algorithm, connection_type=connection_type, run_num=run_num, additional_info=output_additional_info) + "_" + curr_time
     os.makedirs(original_dir + "/tasks_run/" + folder_name, exist_ok=True)
     return original_dir + "/tasks_run/" + folder_name
-
-def cleanup_flow(original_dir):
-    script_path ="/task/designs/bitstream_script.openfpga"
-
-    start_time = time.time()
-    remove_rr_graph_from_script(original_dir + script_path)
-    remove_place_algorithm_from_script(original_dir + script_path)
-    remove_cw_from_script(original_dir + script_path)
-    remove_random_seed_from_script(original_dir + script_path)
-    end_time = time.time()
-
-    run_time = (end_time - start_time) * 1000
-    print_verbose(f"\tCleaning Script took {run_time:0.2f} ms")
 
 def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to_write_rrg="/base_rrg/rr_graph.xml", path_to_benchmark=and2_blif_path):
     
@@ -281,10 +306,43 @@ def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to
     
     run_command_in_temp_dir(command, original_dir, handle_error=False, verbose=False)
 
-def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent_connectivity=0.5, connection_type="subset", arch_file =""):
+def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent_connectivity=0.5, connection_type="subset", arch_file ="", vertical_connectivity=1, sb_switch_name="", sb_segment_name="", sb_input_pattern=[], sb_output_pattern=[], sb_location_pattern="repeated_interval", sb_grid_csv_path=""):
 
     # Make sure the output directory exists
     os.makedirs(os.path.dirname(original_dir + output_file_path), exist_ok=True)
+
+    sb_grid_csv_string = ""
+
+    if sb_location_pattern == "custom":
+        if sb_grid_csv_path == "":
+            print("ERROR: No custom SB grid CSV path provided.")
+            exit(1)
+        else:
+            sb_grid_csv_string == "--sb_grid_csv " + sb_grid_csv_path
+
+    sb_input_pattern_string = ""
+    sb_output_pattern_string = ""
+
+    if connection_type == "custom":
+        if sb_input_pattern != []:
+            sb_input_pattern = [str(x) for x in sb_input_pattern]
+            sb_input_pattern_string = "--sb_3d_input_pattern " + " ".join(sb_input_pattern)
+        else:
+            print("ERROR: No input pattern provided for custom connection type.")
+            exit(1)
+        
+        if sb_output_pattern != []:
+            sb_output_pattern = [str(x) for x in sb_output_pattern]
+            sb_output_pattern_string = "--sb_3d_output_pattern " + " ".join(sb_output_pattern)
+        else:
+            print("ERROR: No output pattern provided for custom connection type.")
+            exit(1)
+
+    if sb_switch_name != "":
+        sb_switch_name = "--sb_3d_switch " + sb_switch_name
+
+    if sb_segment_name != "":
+        sb_segment_name = "--sb_3d_segment " + sb_segment_name
 
     command = ["python3", 
                original_dir + "/scripts/3d_sb_creator.py",
@@ -293,6 +351,13 @@ def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent
                "-p", str(percent_connectivity),
                "-c", connection_type,
                "-a", arch_file,
+               "-vp", str(vertical_connectivity),
+               "--sb_location_pattern", sb_location_pattern,
+               sb_grid_csv_string,
+               sb_switch_name,
+               sb_segment_name,
+               sb_input_pattern_string,
+               sb_output_pattern_string
                ]
     
     run_command_in_temp_dir(command, original_dir, verbose=True)

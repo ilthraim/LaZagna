@@ -61,3 +61,44 @@ def add_new_layer(root, base_die=None):
         print_verbose(f"New layer added with die='{new_die}'.")
     else:
         print_verbose("Failed to add new layer.")
+
+def update_vertical_delay_ratio(root, new_ratio, sb_3d_switch_name="3D_SB_switch", base_delay_switch="", cb_switches_names = []):
+    """Update the vertical_delay_ratio in the architecture XML file.
+    Args:
+        root (ElementTree): The root element of the XML tree.
+        new_ratio (float): The new vertical delay ratio to set.
+        sb_3d_switch_name (str): The name of the 3D SB switch.
+        base_delay_switch (str): The base delay switch name to base 3D delay adjustment on.
+        cb_switches_names (list[str]): List of CB switch names to also have their delays modified.
+    """
+    
+    # Find the switches section
+    switches = root.find('.//switchlist')
+    if switches is None:
+        print("Error: No switchlist element found.")
+        exit(1)
+
+    # Find the 3D switch
+    sb_switch = switches.find(f".//switch[name='{sb_3d_switch_name}']")
+    if sb_switch is None:
+        print(f"Error: Switch '{sb_3d_switch_name}' not found.")
+        exit(1)
+
+    base_switch = switches.find(f".//switch[name='{base_delay_switch}']")
+    if base_switch is None:
+        print(f"Error: Base switch '{base_delay_switch}' not found.")
+        exit(1)
+
+    base_delay = float(base_switch.get('Tdel'))
+
+    new_delay = base_delay * new_ratio
+    sb_switch.set('Tdel', str(new_delay))
+
+    for cb_switch_name in cb_switches_names:
+        cb_switch = switches.find(f".//switch[name='{cb_switch_name}']")
+        if cb_switch is None:
+            print(f"Error: CB switch '{cb_switch_name}' not found.")
+            exit(1)
+        cb_delay = float(cb_switch.get('Tdel'))
+        new_cb_delay = cb_delay * new_ratio
+        cb_switch.set('Tdel', str(new_cb_delay))

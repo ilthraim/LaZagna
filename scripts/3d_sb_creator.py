@@ -22,9 +22,9 @@ args_parser.add_argument("-v", "--verbose", help="Whether to print verbose outpu
 
 args_parser.add_argument("-a", "--arch_file", type=str, help="The file path to the VPR architecture XML file", required=True)
 
-args_parser.add_argument("--sb_3d_segment", type=str, help="The name of the 3D segment to use for the 3D SBs (Needs to be defined in the architecture XML file)", default="")
+args_parser.add_argument("--sb_3d_segment", type=str, help="The name of the 3D segment to use for the 3D SBs (Needs to be defined in the architecture XML file, by default is `3D_SB_connection`)", default="3D_SB_connection")
 
-args_parser.add_argument("--sb_3d_switch", type=str, help="The name of the 3D switch to use for the 3D SBs (Needs to be defined in the architecture XML file)", default="")
+args_parser.add_argument("--sb_3d_switch", type=str, help="The name of the 3D switch to use for the 3D SBs (Needs to be defined in the architecture XML file, by default is `3D_SB_switch`)", default="3D_SB_switch")
 
 args_parser.add_argument("--sb_location_pattern", choices=["repeated_interval", "random", "custom"], help="The pattern to use for the location of the 3D SBs. Options are: repeated_interval, random, custom. If custom then the option `--sb_grid_csv` option must be specified", default="repeated_interval")
 
@@ -33,9 +33,9 @@ args_parser.add_argument("--sb_grid_csv", type=str, help="The file path to the C
 #TODO: Make it actually be any number of crossings, currently either 1 or max
 args_parser.add_argument("--max_number_of_crossings", type=int, help="The maximum number of crossings to allow in a single connection in a 3D SB. -1 means there is no maximum, every signal can cross at every possible location, currently any other value is the same result as 1 (to be implemented)", default=-1)
 
-args_parser.add_argument("--sb_input_pattern", nargs=4, type=int, help="The pattern to use for the input connections of the 3D SBs. The pattern is a list of 4 integers. See documentation or `create_custom_connection_3d_sb` function for more details. This option is required and only used if the `--connection_type` option is set to `custom`.", default=None)
+args_parser.add_argument("--sb_input_pattern", nargs=4, type=int, metavar=('XYChanX', 'XYChanY', 'X+1YChanX', 'XY+1ChanY'), help="The pattern to use for the input connections of the 3D SBs. The pattern is a list of 4 integers. See documentation or `create_custom_connection_3d_sb` function for more details. This option is required and only used if the `--connection_type` option is set to `custom`.", default=None)
 
-args_parser.add_argument("--sb_output_pattern", nargs=4, metavar=('') type=int, help="The pattern to use for the output connections of the 3D SBs. The pattern is a list of 4 integers. See documentation or `create_custom_connection_3d_sb` function for more details. This option is required and only used if the `--connection_type` option is set to `custom`.", default=None)
+args_parser.add_argument("--sb_output_pattern", nargs=4, metavar=('XYChanX', 'XYChanY', 'X+1YChanX', 'XY+1ChanY'), type=int, help="The pattern to use for the output connections of the 3D SBs. The pattern is a list of 4 integers. See documentation or `create_custom_connection_3d_sb` function for more details. This option is required and only used if the `--connection_type` option is set to `custom`.", default=None)
 
 args = args_parser.parse_args()
 
