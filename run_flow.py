@@ -103,7 +103,7 @@ def run_flow(original_dir, width, height, channel_width, benchmark_name="", temp
         run_time = (end_time - start_time) * 1000
         print_verbose(f"Generating Empty Results file and writing to {original_dir + results_path + result_file_name} took {run_time:0.2f} ms")
 
-def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", is_verilog_benchmarks=False, connection_type="subset", arch_file="", random_seed=1, run_num=1, extra_vpr_options="", output_additional_info="", temp_dir="", vertical_connectivity=1, sb_switch_name="", sb_segment_name="", sb_input_pattern=[], sb_output_pattern=[], sb_location_pattern="repeated_interval", sb_grid_csv_path=""):
+def setup_flow(original_dir, width, height, channel_width, type_sb="full", percent_connectivity=0.5, place_algorithm="cube_bb", is_verilog_benchmarks=False, connection_type="subset", arch_file="", random_seed=1, run_num=1, extra_vpr_options="", output_additional_info="", temp_dir="", vertical_connectivity=1, sb_switch_name="", sb_segment_name="", sb_input_pattern=[], sb_output_pattern=[], sb_location_pattern="repeated_interval", sb_grid_csv_path="", vertical_delay_ratio=1, sb_3d_switch_name="3D_SB_switch", base_delay_switch="", switch_interlayer_pairs={}, update_arch_delay=False):
     
 
     # Copy the task directory to the temp directory and work on it from there
@@ -141,7 +141,11 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
         arch_base_file = arch_file
         arch_output_dir = original_dir + "/arch_files/" 
     
-    arch_output_file_name = os.path.splitext(os.path.basename(arch_base_file))[0] + "_" + str(width) + "x" + str(height) + ".xml"
+    delay_ratio_string = ""
+    if update_arch_delay:
+        delay_ratio_string = "_delay_ratio_" + str(vertical_delay_ratio)
+
+    arch_output_file_name = os.path.splitext(os.path.basename(arch_base_file))[0] + "_" + str(width) + "x" + str(height) + delay_ratio_string + ".xml"
 
     arch_output_file_path = arch_output_dir + arch_output_file_name
 
@@ -156,6 +160,10 @@ def setup_flow(original_dir, width, height, channel_width, type_sb="full", perce
 
         start_time = time.time()
         set_fixed_layout_dimensions(root, width=width, height=height)
+
+        if update_arch_delay:
+            update_vertical_delay_ratio(root, vertical_delay_ratio=vertical_delay_ratio, sb_3d_switch_name=sb_3d_switch_name, base_delay_switch=base_delay_switch, switch_interlayer_pairs=switch_interlayer_pairs)
+
         end_time = time.time()
 
         run_time = (end_time - start_time) * 1000
@@ -300,7 +308,8 @@ def create_base_rrg(original_dir:str, path_to_arch:str, channel_width=2, path_to
                       "--write_rr_graph", 
                       original_dir + path_to_write_rrg,
                       "--clock_modeling",
-                      "route"]
+                      "route",
+                      "--pack"]
     
     print_verbose(f"Creating Base RRG with command: {' '.join(command)}")
     
@@ -311,39 +320,6 @@ def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent
     # Make sure the output directory exists
     os.makedirs(os.path.dirname(original_dir + output_file_path), exist_ok=True)
 
-    sb_grid_csv_string = ""
-
-    if sb_location_pattern == "custom":
-        if sb_grid_csv_path == "":
-            print("ERROR: No custom SB grid CSV path provided.")
-            exit(1)
-        else:
-            sb_grid_csv_string == "--sb_grid_csv " + sb_grid_csv_path
-
-    sb_input_pattern_string = ""
-    sb_output_pattern_string = ""
-
-    if connection_type == "custom":
-        if sb_input_pattern != []:
-            sb_input_pattern = [str(x) for x in sb_input_pattern]
-            sb_input_pattern_string = "--sb_3d_input_pattern " + " ".join(sb_input_pattern)
-        else:
-            print("ERROR: No input pattern provided for custom connection type.")
-            exit(1)
-        
-        if sb_output_pattern != []:
-            sb_output_pattern = [str(x) for x in sb_output_pattern]
-            sb_output_pattern_string = "--sb_3d_output_pattern " + " ".join(sb_output_pattern)
-        else:
-            print("ERROR: No output pattern provided for custom connection type.")
-            exit(1)
-
-    if sb_switch_name != "":
-        sb_switch_name = "--sb_3d_switch " + sb_switch_name
-
-    if sb_segment_name != "":
-        sb_segment_name = "--sb_3d_segment " + sb_segment_name
-
     command = ["python3", 
                original_dir + "/scripts/3d_sb_creator.py",
                "-f", original_dir + base_arch_path,
@@ -352,13 +328,48 @@ def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent
                "-c", connection_type,
                "-a", arch_file,
                "-vp", str(vertical_connectivity),
-               "--sb_location_pattern", sb_location_pattern,
-               sb_grid_csv_string,
-               sb_switch_name,
-               sb_segment_name,
-               sb_input_pattern_string,
-               sb_output_pattern_string
-               ]
+               "--sb_location_pattern", sb_location_pattern,]
+
+    sb_grid_csv_string = ""
+
+    if sb_location_pattern == "custom":
+        if sb_grid_csv_path == "":
+            print("ERROR: No custom SB grid CSV path provided.")
+            exit(1)
+        else:
+
+            command.append("--sb_grid_csv")
+            command.append(sb_grid_csv_path)
+
+    sb_input_pattern_string = ""
+    sb_output_pattern_string = ""
+
+    if connection_type == "custom":
+        if sb_input_pattern != []:
+            sb_input_pattern = [str(x) for x in sb_input_pattern]
+            command.append("--sb_3d_input_pattern")
+            command.append(" ".join(sb_input_pattern))
+        else:
+            print("ERROR: No input pattern provided for custom connection type.")
+            exit(1)
+        
+        if sb_output_pattern != []:
+            sb_output_pattern = [str(x) for x in sb_output_pattern]
+            command.append("--sb_3d_output_pattern")
+            command.append(" ".join(sb_output_pattern))
+        else:
+            print("ERROR: No output pattern provided for custom connection type.")
+            exit(1)
+
+
+    if sb_switch_name != "":
+        command.append("--sb_3d_switch")
+        command.append(sb_switch_name)
+
+    if sb_segment_name != "":
+        command.append("--sb_3d_segment")
+        command.append(sb_segment_name)
+
     
     run_command_in_temp_dir(command, original_dir, verbose=True)
 

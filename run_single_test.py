@@ -53,17 +53,17 @@ def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_di
 
         os.makedirs(output_folder_name + "/task_" + extract_file_name(verilog_file), exist_ok=True)
 
-        command = ["cp", "-f", route_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
-        run_command_in_temp_dir(command, original_dir)
-
-        command = ["cp", "-f", place_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
-        run_command_in_temp_dir(command, original_dir)
-
-        command = ["cp", "-f", timing_results_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
-        run_command_in_temp_dir(command, original_dir)
-
-        # command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        # command = ["cp", "-f", route_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
         # run_command_in_temp_dir(command, original_dir)
+
+        # command = ["cp", "-f", place_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        # run_command_in_temp_dir(command, original_dir)
+
+        # command = ["cp", "-f", timing_results_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        # run_command_in_temp_dir(command, original_dir)
+
+        command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        run_command_in_temp_dir(command, original_dir)
 
 ITD_paper_top_modules = {
                          "attention_layer.v":"attention_layer",
@@ -158,20 +158,107 @@ VTR_benchmarks_top_modules = {"arm_core.v":"arm_core",
                               "tpu.16x16.int8.v":"top",
                               "tpu.32x32.int8.v":"top"}
 
+def run_interface(params):
+    """Run the interface with parameters from a dictionary."""
+
+    expected_params = [
+        'original_dir', 'width', 'height', 'channel_width', 'type_sb',
+        'percent_connectivity', 'place_algorithm', 'is_verilog_benchmarks',
+        'connection_type', 'arch_file', 'seed', 'run_num',
+        'additional_vpr_options', 'cur_loop_identifier', 'blif_files',
+        'verilog_files', 'act_files', 'top_module_names', 'vertical_connectivity',
+        'sb_switch_name', 'sb_segment_name', 'sb_input_pattern',
+        'sb_output_pattern', 'sb_location_pattern', 'sb_grid_csv_path',
+        'vertical_delay_ratio', 'base_delay_switch', 'switch_interlayer_pairs',
+        'update_arch_delay'
+    ]
+    # Check if all expected parameters are present
+    
+    missing_params = [param for param in expected_params if param not in params]
+
+    if len(missing_params) > 0:
+        print(f"ERROR: Missing parameters: {', '.join(missing_params)}")
+        return
+
+
+
+    with tempfile.TemporaryDirectory() as outer_temp_dir:
+        # Setup flow using params dictionary
+        task_run_folder = setup_flow(
+            original_dir=params['original_dir'],
+            width=params['width'],
+            height=params['height'],
+            channel_width=params['channel_width'],
+            type_sb=params['type_sb'],
+            percent_connectivity=params['percent_connectivity'],
+            place_algorithm=params['place_algorithm'],
+            is_verilog_benchmarks=params['is_verilog_benchmarks'],
+            connection_type=params['connection_type'],
+            arch_file=params['arch_file'],
+            random_seed=params['seed'],
+            run_num=params['run_num'],
+            extra_vpr_options=params['additional_vpr_options'],
+            output_additional_info=params['cur_loop_identifier'],
+            temp_dir=outer_temp_dir,
+            vertical_connectivity=params['vertical_connectivity'],
+            sb_switch_name=params['sb_switch_name'],
+            sb_segment_name=params['sb_segment_name'],
+            sb_input_pattern=params['sb_input_pattern'],
+            sb_output_pattern=params['sb_output_pattern'],
+            sb_location_pattern=params['sb_location_pattern'],
+            sb_grid_csv_path=params['sb_grid_csv_path'],
+            vertical_delay_ratio=params['vertical_delay_ratio'],
+            sb_3d_switch_name=params['sb_switch_name'],
+            base_delay_switch=params['base_delay_switch'],
+            switch_interlayer_pairs=params['switch_interlayer_pairs'],
+            update_arch_delay=params['update_arch_delay']
+        )
+
+        # Parallelized
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for i in range(len(params['blif_files'])):
+                futures.append(
+                    executor.submit(
+                        run_one_benchmark,
+                        i,                                                                 # benchmark index
+                        blif_file=params['blif_files'][i],                                # blif file path
+                        verilog_file=params['verilog_files'][i],                          # verilog file path
+                        act_file=params['act_files'][i],                                   # activity file path
+                        original_dir=params['original_dir'],                              # original directory
+                        width=params['width'],                                            # width parameter
+                        height=params['height'],                                          # height parameter
+                        channel_width=params['channel_width'],                            # channel width
+                        type_sb=params['type_sb'],                                        # switch block type
+                        percent_connectivity=params['percent_connectivity'],              # connectivity percentage
+                        place_algorithm=params['place_algorithm'],                        # placement algorithm
+                        verilog_benchmarks=params['is_verilog_benchmarks'],              # using verilog benchmarks?
+                        connection_type=params['connection_type'],                        # connection type
+                        benchmark_top_name=params['top_module_names'].get(os.path.basename(params['verilog_files'][i]), ""), # top module name
+                        output_folder_name=task_run_folder,                                # output folder
+                        run_number=params['run_num'],                                     # run number
+                        output_additional_info=params['cur_loop_identifier'],             # additional info
+                        temp_template_dir=outer_temp_dir                                   # template directory
+                    )
+                )
+
+            for future in futures:
+                future.result()
+
 def main():
-    percents_to_test = [1.0, 0.66, 0.33]
+    percents_to_test = [1.0]
     # percents_to_test = [1.0]
 
     place_algs = ["cube_bb", "per_layer_bb"]
     # place_algs = ["cube_bb"]
 
-    connection_types = ["subset", "wilton_2"]
+    connection_types = ["subset"]
     # connection_types = ["subset"]
 
-    type_sbs = ["2d", "3d_cb", "3d_cb_out_only", "combined"]
+    type_sbs = ["3d_cb"]
     # type_sbs = ["combined"]
 
-    random_seed_array = [random.randint(0, 100000) for _ in range(0, 10)]
+    random_seed_array = [random.randint(0, 100000) for _ in range(0, 2)]
     # random_seed_array = [1]
 
     tasks_start_time = time.time()
@@ -192,9 +279,9 @@ def main():
 
     vertical_connectivity = 1
 
-    sb_switch_name = ""
+    sb_switch_name = "3D_SB_switch"
 
-    sb_segment_name = ""
+    sb_segment_name = "3D_SB_connection"
 
     sb_input_pattern = []
     sb_output_pattern = []
@@ -203,14 +290,18 @@ def main():
 
     sb_grid_csv_path=""
 
-    # TO BE ADDED AS A PARAMETER
-    vertical_delay_ratio = 1
-
     original_dir = os.getcwd()
 
     is_verilog_benchmarks = False # True if using verilog benchmarks (Koios), False if using blif benchmarks (MCNC)
     benchmarks_dir = original_dir + "/benchmarks" + "/MCNC_benchmarks" # "/MCNC_benchmarks" or "/koios" or "/ITD_paper" or "/ITD_subset" or "/ITD_quick" or "/VTR_benchmarks"
     
+    vertical_delay_ratio = [1, 5]
+
+    base_delay_switch = "L4_driver"
+
+    switch_interlayer_pairs = {"L4_driver" : "L4_inter_layer_driver", "L16_driver": "L16_inter_layer_driver", "ipin_cblock": "ipin_inter_layer_cblock"}
+    update_arch_delay = True
+
     # arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
 
     identifier_string = "dsp_bram_random_seeds_run"
@@ -218,7 +309,7 @@ def main():
     
     vpr_options = "--inner_num"
 
-    for l in inner_num_to_test:
+    for l in vertical_delay_ratio:
         for k in range(len(connection_types)):
             for j in range(len(percents_to_test)):
                 for place_algorithm in place_algs:
@@ -233,8 +324,8 @@ def main():
 
                             main_start_time = time.time()
 
-                            cur_loop_identifier = identifier_string + str(l) 
-                            cur_loop_vpr_options = vpr_options + " " + str(l)
+                            cur_loop_identifier = identifier_string + str(0.5) + "_" + str(l)
+                            cur_loop_vpr_options = vpr_options + " " + str(0.5)
 
                             top_module_names = {}
 
@@ -294,63 +385,39 @@ def main():
 
                             print(f"Running with options: Width: {width}, Height: {height}, Channel Width: {channel_width}, Percent Connectivity: {percent_connectivity}, Place Algorithm: {place_algorithm}, Connection Type: {connection_type}, SB Type: {type_sb} with extra VPR options: {cur_loop_vpr_options} and identifier: {cur_loop_identifier}")
 
-                            with tempfile.TemporaryDirectory() as outer_temp_dir:
+                            run_params = {
+                                "original_dir": original_dir,
+                                "width": width,
+                                "height": height,
+                                "channel_width": channel_width,
+                                "type_sb": type_sb,
+                                "percent_connectivity": percent_connectivity,
+                                "place_algorithm": place_algorithm,
+                                "is_verilog_benchmarks": is_verilog_benchmarks,
+                                "connection_type": connection_type,
+                                "arch_file": arch_file,
+                                "seed": seed,
+                                "run_num": run_num,
+                                "additional_vpr_options": cur_loop_vpr_options,
+                                "cur_loop_identifier": cur_loop_identifier,
+                                "blif_files": blif_files,
+                                "verilog_files": verilog_files,
+                                "act_files": act_files,
+                                "top_module_names": top_module_names,
+                                "vertical_connectivity": vertical_connectivity,
+                                "sb_switch_name": sb_switch_name,
+                                "sb_segment_name": sb_segment_name,
+                                "sb_input_pattern": sb_input_pattern,
+                                "sb_output_pattern": sb_output_pattern,
+                                "sb_location_pattern": sb_location_pattern,
+                                "sb_grid_csv_path": sb_grid_csv_path,
+                                "vertical_delay_ratio": l,
+                                "base_delay_switch": base_delay_switch,
+                                "switch_interlayer_pairs": switch_interlayer_pairs,
+                                "update_arch_delay": update_arch_delay
+                            }
 
-                                task_run_folder = setup_flow(
-                                                            original_dir=original_dir, 
-                                                            width=width, 
-                                                            height=height, 
-                                                            channel_width=channel_width, 
-                                                            type_sb=type_sb, 
-                                                            percent_connectivity=percent_connectivity, 
-                                                            place_algorithm=place_algorithm, 
-                                                            is_verilog_benchmarks=is_verilog_benchmarks, 
-                                                            connection_type=connection_type, 
-                                                            arch_file=arch_file, 
-                                                            random_seed=seed, 
-                                                            run_num=run_num, 
-                                                            extra_vpr_options=cur_loop_vpr_options, 
-                                                            output_additional_info=cur_loop_identifier, 
-                                                            temp_dir=outer_temp_dir,
-                                                            vertical_connectivity=vertical_connectivity,
-                                                            sb_switch_name=sb_switch_name,
-                                                            sb_segment_name=sb_segment_name,
-                                                            sb_input_pattern=sb_input_pattern,
-                                                            sb_output_pattern=sb_output_pattern,
-                                                            sb_location_pattern=sb_location_pattern,
-                                                            sb_grid_csv_path=sb_grid_csv_path
-                                                            )  
-
-                                # Parallelized
-                                with ThreadPoolExecutor() as executor:
-                                    futures = []
-                                    for i in range(len(blif_files)):
-                                        futures.append(
-                                            executor.submit(
-                                                run_one_benchmark,
-                                                i,                                                            # benchmark index
-                                                blif_file=blif_files[i],                                      # blif file path
-                                                verilog_file=verilog_files[i],                                # verilog file path
-                                                act_file=act_files[i],                                        # activity file path
-                                                original_dir=original_dir,                                    # original directory
-                                                width=width,                                              # width parameter
-                                                height=height,                                            # height parameter
-                                                channel_width=channel_width,                                  # channel width
-                                                type_sb=type_sb,                                              # switch block type
-                                                percent_connectivity=percent_connectivity,                    # connectivity percentage
-                                                place_algorithm=place_algorithm,                              # placement algorithm
-                                                verilog_benchmarks=is_verilog_benchmarks,                        # using verilog benchmarks?
-                                                connection_type=connection_type,                              # connection type
-                                                benchmark_top_name=top_module_names.get(os.path.basename(verilog_files[i]), ""),  # top module name
-                                                output_folder_name=task_run_folder,                           # output folder
-                                                run_number=run_num,                                           # run number
-                                                output_additional_info=cur_loop_identifier,                   # additional info
-                                                temp_template_dir=outer_temp_dir                              # template directory
-                                            )
-                                        )
-
-                                    for future in futures:
-                                        future.result()
+                            run_interface(run_params)
 
                             # Serialized
                             # for i in range(len(blif_files)):
@@ -371,3 +438,5 @@ def main():
     
 if __name__ == "__main__":
     main()
+
+
