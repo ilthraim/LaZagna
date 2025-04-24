@@ -47,23 +47,32 @@ def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_di
         # copy task folder for reference
 
         # interesting files for me
-        route_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/{extract_file_name(verilog_file)}.route"
-        place_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/{extract_file_name(verilog_file)}.place"
+        route_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/*.route"
+        place_file_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/*.place"
         timing_results_path = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/report_timing.setup.rpt"
+        openfpga_shell_log = temp_task_dir + f"/latest/vtr_arch/{extract_file_name(verilog_file)}/Common/openfpgashell.log"
 
         os.makedirs(output_folder_name + "/task_" + extract_file_name(verilog_file), exist_ok=True)
 
-        # command = ["cp", "-f", route_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
-        # run_command_in_temp_dir(command, original_dir)
+        # if os.path.exists(route_file_path):
+        #     command = ["cp", "-f", route_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        #     run_command_in_temp_dir(command, original_dir)
 
-        # command = ["cp", "-f", place_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
-        # run_command_in_temp_dir(command, original_dir)
+        # if os.path.exists(place_file_path):
+        #     command = ["cp", "-f", place_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        #     run_command_in_temp_dir(command, original_dir)
 
-        # command = ["cp", "-f", timing_results_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
-        # run_command_in_temp_dir(command, original_dir)
+        # if os.path.exists(timing_results_path):
+        #     command = ["cp", "-f", timing_results_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+        #     run_command_in_temp_dir(command, original_dir)
 
-        command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
-        run_command_in_temp_dir(command, original_dir)
+        if os.path.exists(openfpga_shell_log):
+            shutil.copyfile(openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/openfpgashell.log")
+            # command = ["cp", "-f", openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
+            # run_command_in_temp_dir(command, original_dir)
+
+        # command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        # run_command_in_temp_dir(command, original_dir)
 
 ITD_paper_top_modules = {
                          "attention_layer.v":"attention_layer",
@@ -214,6 +223,20 @@ def run_interface(params):
             update_arch_delay=params['update_arch_delay']
         )
 
+        output_identifier = params['cur_loop_identifier']
+
+        if params['connection_type'] == 'custom':
+            output_identifier = params['cur_loop_identifier'] + "_custom"
+            output_identifier += "_input_" + str(params['sb_input_pattern']).replace("_","")
+            output_identifier += "_output_" + str(params['sb_output_pattern']).replace("_","")
+
+        if params['sb_location_pattern'] == "custom":
+            output_identifier += "_location_" + str(params['sb_location_pattern']).replace("_","")
+            output_identifier += "_grid_csv_path_" + os.path.basename(params['sb_grid_csv_path']).split(".")[0] 
+
+        if params['sb_location_pattern'] == "random":
+            output_identifier += "_location_" + str(params['sb_location_pattern']).replace("_","")
+
         # Parallelized
         with ThreadPoolExecutor() as executor:
             futures = []
@@ -237,7 +260,7 @@ def run_interface(params):
                         benchmark_top_name=params['top_module_names'].get(os.path.basename(params['verilog_files'][i]), ""), # top module name
                         output_folder_name=task_run_folder,                                # output folder
                         run_number=params['run_num'],                                     # run number
-                        output_additional_info=params['cur_loop_identifier'],             # additional info
+                        output_additional_info=output_identifier,             # additional info
                         temp_template_dir=outer_temp_dir                                   # template directory
                     )
                 )
@@ -378,7 +401,7 @@ def main():
                                 arch_file = "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
 
 
-                            legal_choices = ["combined", "3d_cb", "2d", "3d_cb_out_only"]
+                            legal_choices = ["combined", "3d_cb", "2d", "3d_cb_out_only", "hybrid_cb", "hybrid_cb_out"]
                             if type_sb not in legal_choices:    
                                 print(f"ERROR: Invalid SB type: {type_sb}. Please choose from {legal_choices}")
                                 exit(1)

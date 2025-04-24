@@ -41,7 +41,7 @@ args = args_parser.parse_args()
 
 
 node_struct = namedtuple("Node", ["id", "type", "layer", "xhigh", "xlow", "yhigh", "ylow", "side", "direction", "ptc", "segment"])
-edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_layer"])
+edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_layer", "switch"])
 
 node_data = {}
 
@@ -189,31 +189,6 @@ def extract_nodes(root):
     print_verbose(f"max_node_id: {max_node_id}")
     print_verbose(f"Extracting all nodes took { ((end_time - start_time) * 1000):0.2f} ms")
 
-def extract_edges(root):
-    print_verbose(f"Extracting Edges")
-    start_time = time.time()
-    rr_edges = root.find("rr_edges")
-    count = 0
-    for edge in rr_edges.findall("edge"):
-        count+=1
-        src_node = edge.get("src_node")
-        sink_node = edge.get("sink_node")
-
-        if count % 1000000 == 0:
-            print_verbose(f"\tProcessed {count} edges")
-
-        if src_node not in node_data or sink_node not in node_data:
-            continue
-
-        src_node_data = node_data[src_node]
-        sink_node_data = node_data[sink_node]
-
-        src_layer = src_node_data.layer
-        sink_layer = sink_node_data.layer     
-    
-    end_time = time.time()
-    print_verbose(f"Extracting Edges took { ((end_time - start_time) * 1000):0.2f} ms")
-
 def create_node(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node=0, segment="0"):
     new_node = node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node, segment)
     add_node(new_node)
@@ -255,17 +230,29 @@ def edge_string(edge: edge_struct):
 
 EDGE_TEMPLATE = '<edge sink_node="{sink}" src_node="{src}" switch_id="{switch}"/>'
 
-def edge_xml_element(edge, switch_id="2"):
+def edge_xml_element(edge):
     return etree.fromstring(
         EDGE_TEMPLATE.format(
             sink=edge.sink_node,
             src=edge.src_node,
-            switch=switch_id
+            switch=edge.switch
         )
     )
 
-def create_edge(src_node, sink_node, src_layer, sink_layer):
-    new_edge = edge_struct(src_node, sink_node, src_layer, sink_layer)
+# temporary fix for mapping segment id at output to its correct switch
+node_switch_id = {
+    "0": "2",
+    "1": "3",
+    "2": "7"
+
+}
+
+def create_edge(src_node, sink_node, src_layer, sink_layer, output_segment):
+    # need to figure put edge switch based on sink_node segment id
+    global switch_id
+    switch=node_switch_id.get(str(output_segment), str(switch_id))
+
+    new_edge = edge_struct(src_node, sink_node, src_layer, sink_layer, switch)
     # add_edge((src_node, sink_node), new_edge)
     return new_edge
 
@@ -410,16 +397,16 @@ def connect_sb_nodes_combined(input_nodes, output_nodes, x, y, input_layer, outp
 
     # connect the input nodes to the none node
     for input_node in input_nodes:
-        new_edges[edge_idx] = create_edge(input_node.id, input_layer_none_nodes[0].id, input_node.layer, input_layer_none_nodes[0].layer)
+        new_edges[edge_idx] = create_edge(input_node.id, input_layer_none_nodes[0].id, input_node.layer, input_layer_none_nodes[0].layer, input_layer_none_nodes[0].segment)
         edge_idx += 1
     
     # connect the none node to the output nodes
     for output_node in output_nodes:
-        new_edges[edge_idx] = create_edge(output_layer_none_nodes[0].id, output_node.id, output_layer_none_nodes[0].layer, output_node.layer)
+        new_edges[edge_idx] = create_edge(output_layer_none_nodes[0].id, output_node.id, output_layer_none_nodes[0].layer, output_node.layer, output_node.segment)
         edge_idx += 1
 
     # connect the two none nodes
-    new_edges[edge_idx] = create_edge(input_layer_none_nodes[0].id, output_layer_none_nodes[0].id, input_layer_none_nodes[0].layer, output_layer_none_nodes[0].layer)
+    new_edges[edge_idx] = create_edge(input_layer_none_nodes[0].id, output_layer_none_nodes[0].id, input_layer_none_nodes[0].layer, output_layer_none_nodes[0].layer, output_layer_none_nodes[0].segment)
 
     return input_layer_none_nodes, output_layer_none_nodes, new_edges
 
@@ -434,7 +421,7 @@ def write_sb_edges(structure, edges_to_write):
     global switch_id
     rr_edges = structure.find("rr_edges")
     for edge in edges_to_write:
-        new_edge = edge_xml_element(edge, str(switch_id))
+        new_edge = edge_xml_element(edge)
         rr_edges.append(new_edge)
 
 def sort_nodes(nodes):
@@ -886,7 +873,7 @@ def create_custom_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_ch
 def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_layer, connection_type="subset", vertical_connectivity_percentage=1, max_number_of_crossings=-1):
     # need to figure out which nodes to connect together for larger than 2 CWs
 
-    accepted_connection_types = ["subset", "wilton", "wilton_2", "wilton_3"]
+    accepted_connection_types = ["subset", "wilton", "wilton_2", "wilton_3", "custom"]
 
     assert(connection_type in accepted_connection_types)
 
@@ -958,7 +945,7 @@ def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_laye
     elif connection_type == "wilton_3":
         return create_wilton_3_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer, max_crossings=max_number_of_crossings)
     elif connection_type == "custom":
-        return create_custom_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer, max_crossings=max_number_of_crossings, input_pattern=args.input_pattern, output_pattern=args.output_pattern)
+        return create_custom_connection_3d_sb(max_output_len, x_y_chanx_input_nodes, x_y_chany_input_nodes, x_plus_1_y_chanx_input_nodes, x_y_plus_1_chany_input_nodes, x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes, x, y, input_layer, output_layer, max_crossings=max_number_of_crossings, input_pattern=args.sb_input_pattern, output_pattern=args.sb_output_pattern)
 
 def sb_coord_grid(file_path, grid_x, grid_y):
     '''
@@ -1037,7 +1024,7 @@ def percentage_skip_random(grid_x, grid_y, percent):
     :param percent: The percentage of elements to skip (0.0 to 1.0).
     :yield: Coordinates (x, y) that meet the percentage criteria.
     """
-    assert 0 <= percent <= 1, "Percent must be between 0 (inclusive) and 1 (exclusive)."
+    assert 0 <= percent <= 1, "Percent must be between 0 and 1 (inclusive)."
     
     total_elements = (grid_x + 1) * (grid_y + 1)
     num_to_keep = int(total_elements * (percent))
@@ -1270,12 +1257,12 @@ def main():
     connection_type = args.connection_type.lower()
 
     if connection_type == "custom":
-        input_pat = args.input_pattern
+        input_pat = args.sb_input_pattern
         if input_pat == None:
             print("ERROR: Custom connection pattern specified but no input pattern provided. Input and Output pattern are required for custom connection.")
             exit(1)
 
-        output_pat = args.output_pattern
+        output_pat = args.sb_output_pattern
         if output_pat == None:
             print("ERROR: Custom connection pattern specified but no output pattern provided. Input and Output pattern are required for custom connection.")
             exit(1)

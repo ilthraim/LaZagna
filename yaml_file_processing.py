@@ -22,14 +22,64 @@ def load_param_ranges(yaml_file: str) -> Dict:
         params = yaml.safe_load(f)
     
     # If num_seeds is specified, generate and add seed mapping
-    if params['num_seeds'] is not None:
+    if params['num_seeds'] is not None and params['random_seed']:
         if 'linked_params' not in params:
             params['linked_params'] = {}
         params['linked_params']['seed_mapping'] = generate_seed_mapping(params['num_seeds'])
     
+    seed = 1
+    if not params['random_seed']:
+        if 'non_random_seed' in params:
+            seed = int(params['non_random_seed'])
+
+        params['linked_params']['seed_mapping'] = [{'seed': seed, "run_num": 1}]
+
     # remove num_seeds from params
     if 'num_seeds' in params:
         del params['num_seeds']
+
+    if 'random_seed' in params:
+        del params['random_seed']
+
+    if 'non_random_seed' in params:
+        del params['non_random_seed']
+
+    if 'sb_pattern' in params:
+        # Validate the pattern format
+        for pattern in params['sb_pattern']:
+            if not isinstance(pattern, list) or len(pattern) != 2:
+                raise ValueError("Each sb_pattern entry must be a list of two lists")
+            for sublist in pattern:
+                if not isinstance(sublist, list) or len(sublist) != 4:
+                    raise ValueError("Each sb_pattern sublist must contain exactly 4 integers")
+                if not all(isinstance(x, int) for x in sublist):
+                    raise ValueError("All sb_pattern values must be integers")
+
+        # Create a list of dictionaries for the linked parameters
+        sb_pattern_mapping = [
+            {
+                'sb_input_pattern': input_pattern,
+                'sb_output_pattern': output_pattern
+            }
+            for input_pattern, output_pattern in params['sb_pattern']
+        ]
+        
+        # Add to linked_params
+        params['linked_params']['sb_pattern_mapping'] = sb_pattern_mapping
+        
+        # Remove the original sb_pattern
+        del params['sb_pattern']
+
+    if 'sb_location_pattern' in params:
+        params['linked_params']['sb_location_pattern'] = []
+        for location in params['sb_location_pattern']:
+            if location == 'custom':
+                params['linked_params']['sb_location_pattern'].extend([{'sb_location_pattern': location, 'sb_grid_csv_path': i} for i in params['sb_grid_csv_path']])
+            else:
+                params['linked_params']['sb_location_pattern'].append({'sb_location_pattern': location, 'sb_grid_csv_path': ''})
+        
+    del params['sb_location_pattern']
+    del params['sb_grid_csv_path']
 
     return params
 
@@ -155,7 +205,7 @@ def get_run_params_from_yaml(file_path, verbose=False):
         'sb_switch_name', 'sb_segment_name', 'sb_input_pattern',
         'sb_output_pattern', 'sb_location_pattern', 'sb_grid_csv_path',
         'vertical_delay_ratio', 'base_delay_switch', 'switch_interlayer_pairs',
-        'update_arch_delay', 'linked_params'
+        'update_arch_delay', 'linked_params', 'sb_pattern',
     ]
 
     #check there are no extra parameters
@@ -182,7 +232,8 @@ def get_run_params_from_yaml(file_path, verbose=False):
     for combo in combinations:
         if combo['type_sb'] in ["2d", "3d_cb", "3d_cb_out_only"] and combo['connection_type'] != "subset":
             continue
-        if combo['type_sb'] == "2d" and (combo['place_algorithm'] != "cube_bb" or combo['vertical_delay_ratio'] != 1.0):
+        # if combo['type_sb'] == "2d" and (combo['place_algorithm'] != "cube_bb" or combo['vertical_delay_ratio'] != 1.0):
+        if combo['type_sb'] == "2d" and (combo['place_algorithm'] != "cube_bb"):
             continue
         if combo['type_sb'] in ["2d", "3d_cb", "3d_cb_out_only"] and combo['percent_connectivity'] != 1.0:
             continue
@@ -203,3 +254,9 @@ def get_run_params_from_yaml(file_path, verbose=False):
         print_combinations(cleaned_combinations)   
 
     return cleaned_combinations
+
+if __name__ == "__main__":
+    # Example usage
+    yaml_file = "/home/Ismael/3DFADE/setup_files/sb_location_run.yaml"
+    combinations = get_run_params_from_yaml(yaml_file, verbose=True)
+    print(f"Generated {len(combinations)} parameter combinations.")

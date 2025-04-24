@@ -129,18 +129,20 @@ import printing
 import time
 import argparse
 
+eltwise_top_modules = {"eltwise_layer.v" :"eltwise_layer"}
+
 parser = argparse.ArgumentParser(description="Run 3DFADE tests in parallel using configurations in a yaml file.")
 
 parser.add_argument("-f", "--yaml_file", type=str, required=True, help="Path to the yaml file containing the test parameters.")
 parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
-
+parser.add_argument("-j", "--num_workers", type=int, default=4, help="Number of parallel workers to use. Default is 4.")
 # the directory of this file
 original_dir = os.path.dirname(os.path.abspath(__file__))
 
 def run_job(param):
     # Lower the priority of the current process
     process = psutil.Process(os.getpid())
-    process.nice(10)
+    process.nice(11)
     
     param_copy = param.copy()
     param_copy['original_dir'] = original_dir
@@ -159,6 +161,8 @@ def setup_benchmark_files(run_params):
             top_module_names = ITD_subset_top_modules
         elif is_verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/ITD_quick":
             top_module_names = ITD_quick_top_modules
+        elif is_verilog_benchmarks and benchmarks_dir == original_dir + "/benchmarks/eltwise":
+            top_module_names = eltwise_top_modules
         else:
             top_module_names = {}
 
@@ -197,7 +201,7 @@ def main():
 
     # Determine the number of CPUs to use (leave one free for system responsiveness)
     # num_workers = max(1, psutil.cpu_count(logical=True) - 1)
-    num_workers = 2
+    num_workers = args.num_workers
 
     print(f"Running {len(run_params)} jobs in parallel using {num_workers} workers")
         

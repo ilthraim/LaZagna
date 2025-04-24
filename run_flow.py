@@ -347,16 +347,18 @@ def create_custom_3d_rrg(base_arch_path, output_file_path, original_dir, percent
     if connection_type == "custom":
         if sb_input_pattern != []:
             sb_input_pattern = [str(x) for x in sb_input_pattern]
-            command.append("--sb_3d_input_pattern")
-            command.append(" ".join(sb_input_pattern))
+            command.append("--sb_input_pattern")
+            for x in sb_input_pattern:
+                command.append(str(x))
         else:
             print("ERROR: No input pattern provided for custom connection type.")
             exit(1)
         
         if sb_output_pattern != []:
             sb_output_pattern = [str(x) for x in sb_output_pattern]
-            command.append("--sb_3d_output_pattern")
-            command.append(" ".join(sb_output_pattern))
+            command.append("--sb_output_pattern")
+            for x in sb_output_pattern:
+                command.append(str(x))
         else:
             print("ERROR: No output pattern provided for custom connection type.")
             exit(1)
