@@ -9,6 +9,9 @@ edge_struct = namedtuple("Edge", ["src_node", "sink_node", "src_layer", "sink_la
 node_data = {}
 edge_data = {}
 
+segment_id_to_name = {}
+switch_id_to_name = {}
+
 node_ids = defaultdict(int)
 
 def extract_nodes(root):
@@ -383,6 +386,7 @@ def read_structure(file_path):
     
 def find_num_interlayer_edges():
     interlayer_edges = 0
+    interlayer_nodes_set = set()
     for edge, edge_info in edge_data.items():
         src_node = edge_info.src_node
         sink_node = edge_info.sink_node
@@ -393,27 +397,40 @@ def find_num_interlayer_edges():
         src_layer = src_node_data.layer
         sink_layer = sink_node_data.layer
 
-        if sink_node_data.type == "IPIN" and (src_node_data.type != "CHANX" and src_node_data.type != "CHANY"):
-            print(f"Sink IPIN node {sink_node} is driven by {src_node_data.type} node {src_node}")
+        if sink_node_data.layer != src_node_data.layer and src_node not in interlayer_nodes_set:
+            interlayer_nodes_set.add(src_node)
 
         if src_layer != sink_layer:
             interlayer_edges += 1
 
-    return interlayer_edges
+    return interlayer_edges, len(interlayer_nodes_set)
 
-def find_num_interlayer_nodes():
-    #If a node has a sink on a different layer, it is an interlayer node
-    # Keep interlyaer nodes in a set to avoid duplicates
-    interlayer_nodes_set = set()
-    for edge, edge_info in edge_data.items():
-        sink_node = edge_info.sink_node
-        sink_node_data = node_data[sink_node]
+def extract_segments(root):
+    # Get the segments from the XML file
+    segments = root.find("segments")
+    
+    if segments is not None:
+        for segment in segments.findall("segment"):
+            segment_id = segment.get("id")
+            segment_type = segment.get("name")
+            # Do something with the segment data
+            segment_id_to_name[segment_id] = segment_type
+    else:
+        print("No segments found in the XML file.")
 
-        src_node = edge_info.src_node
-        node_info = node_data[src_node]
-        if sink_node_data.layer != node_info.layer and src_node not in interlayer_nodes_set:
-            interlayer_nodes_set.add(src_node)
-    return len(interlayer_nodes_set)
+
+def extract_switches(root):
+    # Get the switches from the XML file
+    switches = root.find("switches")
+    
+    if switches is not None:
+        for switch in switches.findall("switch"):
+            switch_id = switch.get("id")
+            switch_type = switch.get("name")
+            # Do something with the switch data
+            switch_id_to_name[switch_id] = switch_type
+    else:
+        print("No switches found in the XML file.")
 
 def main():
     if len(sys.argv) < 2:
@@ -439,6 +456,9 @@ def main():
     extract_nodes(root)
     extract_edges(root)
 
+    extract_segments(root)
+    extract_switches(root)
+
     print(f"Number of nodes: {len(node_data)}")
     
     #find largest node id in node_ids
@@ -453,8 +473,10 @@ def main():
         #replace _ in name with -
         file_name = file_name.replace("_", "-")
 
-        print(find_num_interlayer_edges())
-        print(find_num_interlayer_nodes())
+
+        num_interlayer_edges, num_interlayer_nodes = find_num_interlayer_edges()
+        print(f"Number of interlayer edges: {num_interlayer_edges}")
+        print(f"Number of interlayer nodes: {num_interlayer_nodes}")
 
         sys.exit(0)
 
@@ -516,7 +538,7 @@ def main():
         elif node_id != "-1":
             src_nodes = []
             sink_nodes = []
-            print(f"\nNode id: {node_id} type: {node_data[node_id].type} layer: {node_data[node_id].layer} xlow: {node_data[node_id].xlow} xhigh: {node_data[node_id].xhigh} ylow: {node_data[node_id].ylow} yhigh: {node_data[node_id].yhigh} side: {node_data[node_id].side} direction: {node_data[node_id].direction} ptc: {node_data[node_id].ptc} segment_id: {node_data[node_id].segment_id}\n")
+            print(f"\nNode id: {node_id} type: {node_data[node_id].type} layer: {node_data[node_id].layer} xlow: {node_data[node_id].xlow} xhigh: {node_data[node_id].xhigh} ylow: {node_data[node_id].ylow} yhigh: {node_data[node_id].yhigh} side: {node_data[node_id].side} direction: {node_data[node_id].direction} ptc: {node_data[node_id].ptc} segment_id: {node_data[node_id].segment_id} segment_name: {segment_id_to_name[node_data[node_id].segment_id]}\n")
             for edge, edge_info in edge_data.items():
                 if edge_info.src_node == node_id:
                     sink_nodes.append(edge_info.sink_node)
@@ -531,7 +553,7 @@ def main():
                 for src_node in src_nodes:
                     if chan_only and (node_data[src_node].type != "CHANX" and node_data[src_node].type != "CHANY"):
                         continue
-                    print(f"\tNode id: {src_node} type: {node_data[src_node].type} layer: {node_data[src_node].layer} xlow: {node_data[src_node].xlow} xhigh: {node_data[src_node].xhigh} ylow: {node_data[src_node].ylow} yhigh: {node_data[src_node].yhigh} side: {node_data[src_node].side} direction: {node_data[src_node].direction} ptc: {node_data[src_node].ptc} segment_id: {node_data[src_node].segment_id}\n")
+                    print(f"\tNode id: {src_node} type: {node_data[src_node].type} layer: {node_data[src_node].layer} xlow: {node_data[src_node].xlow} xhigh: {node_data[src_node].xhigh} ylow: {node_data[src_node].ylow} yhigh: {node_data[src_node].yhigh} side: {node_data[src_node].side} direction: {node_data[src_node].direction} ptc: {node_data[src_node].ptc} segment_id: {node_data[src_node].segment_id} segment_name: {segment_id_to_name[node_data[src_node].segment_id]}\n")
 
             
             print(f"\nSinks of node {node_id}:")
@@ -541,7 +563,7 @@ def main():
                 for sink_node in sink_nodes:
                     if chan_only and (node_data[sink_node].type != "CHANX" and node_data[sink_node].type != "CHANY"):
                         continue
-                    print(f"\tNode id: {sink_node} type: {node_data[sink_node].type} layer: {node_data[sink_node].layer} xlow: {node_data[sink_node].xlow} xhigh: {node_data[sink_node].xhigh} ylow: {node_data[sink_node].ylow} yhigh: {node_data[sink_node].yhigh} side: {node_data[sink_node].side} direction: {node_data[sink_node].direction} ptc: {node_data[sink_node].ptc} segment_id: {node_data[sink_node].segment_id}\n")
+                    print(f"\tNode id: {sink_node} type: {node_data[sink_node].type} layer: {node_data[sink_node].layer} xlow: {node_data[sink_node].xlow} xhigh: {node_data[sink_node].xhigh} ylow: {node_data[sink_node].ylow} yhigh: {node_data[sink_node].yhigh} side: {node_data[sink_node].side} direction: {node_data[sink_node].direction} ptc: {node_data[sink_node].ptc} segment_id: {node_data[sink_node].segment_id} segment_name: {segment_id_to_name[node_data[sink_node].segment_id]}\n")
             print("##########################################################################################\n")
         elif node_id == "-1":
             break

@@ -6,7 +6,7 @@
   -->
 <openfpga_simulation_setting>
   <clock_setting>
-    <operating frequency="auto" num_cycles="auto" slack="0.2"/>
+    <operating frequency="500e6" num_cycles="10" slack="0.2"/>
     <programming frequency="100e6"/>
   </clock_setting>
   <simulator_option>

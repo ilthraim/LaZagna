@@ -10,14 +10,22 @@ base_rrg/*
 
 task/config/task.conf
 
+storage/
+
+arch_files/*.xml
+
 task/designs/*
 !task/designs/.gitkeep
 !task/designs/auto_sim_openfpga.xml
 !task/designs/openfpga_arch.xml
 
+vertical_delay_test_data/
+
 results/*
 
-rrg_3d/*
+yosys_temp/
+
+rrg_3d/
 
 # Ignore all .DS_Store files (macOS)
 .DS_Store
