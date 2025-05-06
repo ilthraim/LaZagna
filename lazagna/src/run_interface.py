@@ -59,20 +59,22 @@ def run_one_benchmark(i, blif_file="", verilog_file="", act_file="", original_di
         #     run_command_in_temp_dir(command, original_dir)
 
         # if os.path.exists(place_file_path):
+        #     shutil.copyfile(openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file))
         #     command = ["cp", "-f", place_file_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
         #     run_command_in_temp_dir(command, original_dir)
 
         # if os.path.exists(timing_results_path):
+            # shutil.copyfile(openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file))
         #     command = ["cp", "-f", timing_results_path, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
         #     run_command_in_temp_dir(command, original_dir)
 
-        if os.path.exists(openfpga_shell_log):
-            shutil.copyfile(openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/openfpgashell.log")
+        # if os.path.exists(openfpga_shell_log):
+        #     shutil.copyfile(openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/openfpgashell.log")
             # command = ["cp", "-f", openfpga_shell_log, output_folder_name + "/task_" + extract_file_name(verilog_file) + "/"]
             # run_command_in_temp_dir(command, original_dir)
 
-        # command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
-        # run_command_in_temp_dir(command, original_dir)
+        command = ["cp", "-r", temp_task_dir, output_folder_name + "/task_" + extract_file_name(verilog_file)]
+        run_command_in_temp_dir(command, original_dir)
 
 ITD_paper_top_modules = {
                          "attention_layer.v":"attention_layer",

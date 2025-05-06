@@ -1,6 +1,6 @@
 # Main scripting file to run 3DFADE
 """
-# Options to give 3DFADE:
+Options to give 3DFADE:
 
     1. VTR Architecture File
         If not provided defaults to templates files under "arch_files/templates"
@@ -119,7 +119,7 @@
         If provided, will output more information about the process.
 """
 
-from run_single_test import run_interface, ITD_paper_top_modules, ITD_subset_top_modules, ITD_quick_top_modules, VTR_benchmarks_top_modules
+from run_interface import run_interface, ITD_paper_top_modules, ITD_subset_top_modules, ITD_quick_top_modules, VTR_benchmarks_top_modules
 from file_handling import get_files_with_extension
 from yaml_file_processing import get_run_params_from_yaml
 import os
@@ -137,7 +137,7 @@ parser.add_argument("-f", "--yaml_file", type=str, required=True, help="Path to 
 parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
 parser.add_argument("-j", "--num_workers", type=int, default=4, help="Number of parallel workers to use. Default is 4.")
 # the directory of this file
-original_dir = os.path.dirname(os.path.abspath(__file__))
+original_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def run_job(param):
     # Lower the priority of the current process
