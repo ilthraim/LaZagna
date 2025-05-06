@@ -233,7 +233,7 @@
   <!-- ODIN II specific config ends -->
   <!-- Physical descriptions begin -->
   <layout tileable="false">
-    <fixed_layout name="12x12" width="40" height="40">
+    <fixed_layout name="12x12" width="14" height="14">
         <!--Perimeter of 'io' blocks with 'EMPTY' blocks at corners-->
         <perimeter type="io" priority="100"/>
         <corners type="EMPTY" priority="101"/>
@@ -241,8 +241,8 @@
         <!--Fill with 'clb'-->
         <fill type="clb" priority="10"/>
 
-        <col type="complex_dsp" startx="2" starty="1" repeatx="8" priority="20"/>
-        <col type="spram" startx="4" starty="1" repeatx="8" priority="20"/>
+        <col type="complex_dsp" startx="2" starty="1" repeatx="4" priority="20"/>
+        <col type="spram" startx="4" starty="1" repeatx="4" priority="20"/>
         <!-- <col type="EMPTY" startx="2" repeatx="8" starty="1" priority="19"/>
         <col type="EMPTY" startx="4" repeatx="8" starty="1" priority="19"/> -->
 
@@ -287,10 +287,10 @@
     <switch type="mux" name="ipin_inter_layer_cblock" R="0.0" Cout="0.0" Cin="0.0" Tdel="244.5818e-12" mux_trans_size="1.508" buf_size="11.71"/>
 
     <!-- Special Switch only used by 3D SBs, it's delay is generated as a ratio from that of the 2D mux, by default if not specifed the first mux is used as the basis for the delay calculation.
-          The delay of this switch is actually 1/3 of the desired delay since there are 3 switches in series to drive interlayer connections. Since interlayer SB connections are like the following:
-          Horziontal Routing Channel on layer X -> None node at layer X -> None node at layer X+1 -> Vertical Routing Channel on layer X+1
+          The delay of this switch is actually 1/2 of the desired delay since there are 2 switches in series to drive interlayer connections. Since interlayer SB connections are like the following:
+          Horziontal Routing Channel on layer X -> None node at layer X (1st interlayer switch) -> None node at layer X+1 (second interlayer switch) -> Vertical Routing Channel on layer X+1
 
-          Notice the 3 switches in series, the first one is the horizontal routing channel on layer X, the second one is the None node at layer X, and the third one is the None node at layer X+1. 
+          Notice the 2 switches in series, the first one is the None node at layer X, the second one is the None node at layer X+1.
      -->
     <switch type="mux" name="3D_SB_switch" R="0.0" Cout="0.0" Cin="0.0" Tdel="323.1684e-12" mux_trans_size="0.0" buf_size="0.0"/>
   </switchlist>
