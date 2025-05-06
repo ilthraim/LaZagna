@@ -86,12 +86,7 @@ LaZagna accepts multiple options to run. There are default values for each item 
 
 - **switch_interlayer_pairs**: `object`
   - Map with keys and values
-    - **L4_driver**: `string`
-      - Description: [description here]
-    - **L16_driver**: `string`
-      - Description: [description here]
-    - **ipin_cblock**: `string`
-      - Description: [description here]
+    
 
 - **update_arch_delay**: `boolean`
   - Description: Whether the vertical delays in the VTR architecture file should be modified or not. 
