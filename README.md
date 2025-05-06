@@ -1,5 +1,3 @@
-# LaZagna: 3D FPGA Architecture Exploration Tool
-
-![Logo](./images/LaZagna_logo_1.png)
+# <img src="./images/LaZagna_logo_1_no_bg.png" alt="Logo" width="24" style="vertical-align:middle; margin-right:8px;"> LaZagna: 3D FPGA Architecture Exploration Tool
 
 ## Repository Organization and Documentation is currently work in progress :construction_worker: :construction:
