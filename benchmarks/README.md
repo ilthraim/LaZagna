@@ -9,7 +9,7 @@ This guide explains how to set up new benchmarks for testing with LaZagna. There
 ### Steps:
 1. Create a new folder for your benchmarks
 2. Add all Verilog files (`.v`) to the folder
-3. Specify the top module names in `lazagna/run_interface.py`
+3. Specify the top module names in `lazagna/run_interface.py` by creating a new dictionary.
    #### Example dictionary format:
    ``` python
    benchmark_tops = {
