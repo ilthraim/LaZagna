@@ -6,6 +6,6 @@ To run:
 python3 lazagna/main.py -f <path_to_setup_file>
 ```
 
-See setup_files readme for how the setup file should look. It specifies the options alows. The outputs will be in `tasks_run` directory with all the results and `results` folder with only CSV files containing each benchmarks palcement and routing results. 
+See `setup_files` directory's README for how the setup file should look. It specifies the options alows. The outputs will be in `tasks_run` directory with all the results and `results` folder with only CSV files containing each benchmarks palcement and routing results. 
 
 `-v` options can be used for a verbose output. 
