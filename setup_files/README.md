@@ -27,26 +27,26 @@ LaZagna accepts multiple options to run. There are default values for each item 
   - Description: Bounding Box computation method for 3D FPGA when using VTR. Options are: "cube_bb" and "per_layer_bb", see VTR documentation to understand the difference. 
 
 - **connection_type**: `list of strings`
-  - Description: [description here]
+  - Description: Pattern to use for 3D SBs. Available options: `subset`, `custom`. If `custom` is chosen then `sb_3d_pattern` needs to be set. 
 
 - **linked_params**: `object`
-  - Structure containing **type_sb_arch_mapping** parameter:
+  - Structure containing **type_sb_arch_mapping** parameter: Liking each vertical connection type to it's VTR architecture XML file.
     - **type_sb**: `string`
-      - Description: [description here]
+      - Description: Vertical Connection type to use. Options are: `2d`, `3d_cb`, `3d_cb_out_only`, `3d_cb_in_only`, `hybrid_cb`, `hybrid_cb_out`, `hybrid_cb_in`, `3d_sb`. New options can be added by modifying the code. 
     - **arch_file**: `string`
-      - Description: [description here]
+      - Description: Path to VTR architecture XML that links to the type_sb specified
 
 - **num_seeds**: `integer`
-  - Description: [description here]
+  - Description: Number of random seeds to test. Only used when `random_seed` is `True`
 
 - **random_seed**: `boolean`
-  - Description: [description here]
+  - Description: Boolean to describe whether to use a random seed for placement or not.
 
 - **non_random_seed**: `integer`
-  - Description: [description here]
+  - Description: Seed to use for placement if `random_seed` is `False`.
 
 - **additional_vpr_options**: `string`
-  - Description: [description here]
+  - Description: Additional options to run with VPR. See [VPR Command Line Options Documentation](https://docs.verilogtorouting.org/en/latest/vpr/command_line_usage/) for more details on options available.
 
 - **cur_loop_identifier**: `string`
   - Description: [description here]
@@ -67,10 +67,10 @@ LaZagna accepts multiple options to run. There are default values for each item 
   - Description: Segment in vtr architecture xml file to use for 3D SB interlayer connections.
 
 - **sb_input_pattern**: `list`
-  - Description: [description here]
+  - Description: Pattern to use for 3D SB inputs.
 
 - **sb_output_pattern**: `list`
-  - Description: [description here]
+  - Description: Patternt to use for 3D SB outputs.
 
 - **sb_location_pattern**: `list[str]`
   - Specifies the pattern for SB locations. Available pattern options are:
@@ -100,7 +100,7 @@ LaZagna accepts multiple options to run. There are default values for each item 
   - Description: Switch name in VTR architecture XML file to use when calculating the vertical delay based on a ratio.
 
 - **switch_interlayer_pairs**: `object`
-  - Map with keys and values
+  - Maps each 2D switch in the VTR Architecture XML to it's 3D equivalent. This is used for calculating new vertical delay ratios to use.
     
 
 - **update_arch_delay**: `boolean`
