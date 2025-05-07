@@ -26,7 +26,7 @@ args_parser.add_argument("--sb_3d_segment", type=str, help="The name of the 3D s
 
 args_parser.add_argument("--sb_3d_switch", type=str, help="The name of the 3D switch to use for the 3D SBs (Needs to be defined in the architecture XML file, by default is `3D_SB_switch`)", default="3D_SB_switch")
 
-args_parser.add_argument("--sb_location_pattern", choices=["repeated_interval", "random", "custom"], help="The pattern to use for the location of the 3D SBs. Options are: repeated_interval, random, custom. If custom then the option `--sb_grid_csv` option must be specified", default="repeated_interval")
+args_parser.add_argument("--sb_location_pattern", choices=["repeated_interval", "random", "custom", "core", "perimeter", "rows", "columns"], help="The pattern to use for the location of the 3D SBs. Options are: repeated_interval, random, custom. If custom then the option `--sb_grid_csv` option must be specified", default="repeated_interval")
 
 args_parser.add_argument("--sb_grid_csv", type=str, help="The file path to the CSV file containing the custom SB locations. The CSV file should have two columns: x and y. The x and y coordinates of the SBs will be read from this file. This option is only used if the `--sb_location_pattern` option is set to `custom`. Run `sb_grid_generator.py` script with `python3 sb_grid_generator.py --width <fabric width> --height <fabric height> --file_path <optional: path_to_write_csv>`, to generate a blank csv template for the grid locations.", default="")
 
@@ -992,6 +992,110 @@ def sb_coord_grid(file_path, grid_x, grid_y):
                     coords.append((x, y))
     return coords
 
+def percentage_rows(grid_x, grid_y, percent):
+    """
+    Return a percentage of evenly spaced rows from a 2D grid.
+    
+    :param grid_x: The range or size of the x-dimension.
+    :param grid_y: The range or size of the y-dimension.
+    :param percent: The percentage of rows to include (0.0 to 1.0).
+    :return: List of coordinates (x, y) from the selected rows.
+    """
+    assert 0 <= percent <= 1, "Percent must be between 0 (inclusive) and 1 (inclusive)."
+    
+    # Calculate how many rows to select
+    rows_to_select = max(1, round((grid_y + 1) * percent))
+    
+    # Select evenly spaced row indices
+    if rows_to_select == grid_y + 1:  # If all rows are selected
+        row_indices = range(grid_y + 1)
+    else:
+        row_indices = np.linspace(0, grid_y, rows_to_select, dtype=int)
+    
+    # Generate coordinates for each selected row
+    ret = []
+    for y in row_indices:
+        for x in range(grid_x + 1):
+            ret.append((x, y))
+    
+    return ret
+
+def percentage_columns(grid_x, grid_y, percent):
+    """
+    Return a percentage of evenly spaced columns from a 2D grid.
+    
+    :param grid_x: The range or size of the x-dimension.
+    :param grid_y: The range or size of the y-dimension.
+    :param percent: The percentage of columns to include (0.0 to 1.0).
+    :return: List of coordinates (x, y) from the selected columns.
+    """
+    assert 0 <= percent <= 1, "Percent must be between 0 (inclusive) and 1 (inclusive)."
+    
+    # Calculate how many columns to select
+    cols_to_select = max(1, round((grid_x + 1) * percent))
+    
+    # Select evenly spaced column indices
+    if cols_to_select == grid_x + 1:  # If all columns are selected
+        col_indices = range(grid_x + 1)
+    else:
+        col_indices = np.linspace(0, grid_x, cols_to_select, dtype=int)
+    
+    # Generate coordinates for each selected column
+    ret = []
+    for x in col_indices:
+        for y in range(grid_y + 1):
+            ret.append((x, y))
+    
+    return ret
+
+def percentage_core(grid_x, grid_y, percent):
+    """
+    Return a square-shaped core from the center of the grid based on percentage.
+    Creates a square pattern starting from the center and expanding outward.
+    """
+    assert 0 <= percent <= 1, "Percent must be between 0 (inclusive) and 1 (inclusive)."
+    
+    total_elements = (grid_x + 1) * (grid_y + 1)
+    elements_to_include = round(total_elements * percent)
+    
+    # Find center of grid
+    center_x = grid_x // 2
+    center_y = grid_y // 2
+    
+    # Calculate max Chebyshev distance (max of |x-center_x|, |y-center_y|)
+    all_coords = [(x, y) for x in range(grid_x + 1) for y in range(grid_y + 1)]
+    chebyshev_distances = [max(abs(x - center_x), abs(y - center_y)) for x, y in all_coords]
+    
+    # Sort coordinates by Chebyshev distance from center (increasing)
+    # This creates square-shaped layers expanding from the center
+    sorted_coords = [coord for _, coord in sorted(zip(chebyshev_distances, all_coords))]
+    
+    return sorted_coords[:elements_to_include]
+
+def percentage_perimeter(grid_x, grid_y, percent):
+    """
+    Return a square-shaped perimeter around the grid based on percentage.
+    Creates a square pattern starting from the outside and moving inward.
+    """
+    assert 0 <= percent <= 1, "Percent must be between 0 (inclusive) and 1 (inclusive)."
+    
+    total_elements = (grid_x + 1) * (grid_y + 1)
+    elements_to_include = round(total_elements * percent)
+    
+    # Find center of grid
+    center_x = grid_x // 2
+    center_y = grid_y // 2
+    
+    # Calculate max Chebyshev distance (max of |x-center_x|, |y-center_y|)
+    all_coords = [(x, y) for x in range(grid_x + 1) for y in range(grid_y + 1)]
+    chebyshev_distances = [max(abs(x - center_x), abs(y - center_y)) for x, y in all_coords]
+    
+    # Sort coordinates by Chebyshev distance from center (decreasing)
+    # This creates square-shaped layers from the outside inward
+    sorted_coords = [coord for _, coord in sorted(zip(chebyshev_distances, all_coords), reverse=True)]
+    
+    return sorted_coords[:elements_to_include]
+
 def percentage_skip_repeated_interval(grid_x, grid_y, percent):
     """
     Iterate over a 2D grid in a deterministic pattern, skipping elements
@@ -1044,6 +1148,14 @@ def skip_loop(grid_x, grid_y, percent):
         coords = percentage_skip_repeated_interval(grid_x, grid_y, percent)
     elif pattern_type == "random":
         coords = percentage_skip_random(grid_x, grid_y, percent)
+    elif pattern_type == 'rows':
+        coords = percentage_rows(grid_x, grid_y, percent)
+    elif pattern_type == 'columns':
+        coords = percentage_columns(grid_x, grid_y, percent)
+    elif pattern_type == 'core':
+        coords = percentage_core(grid_x, grid_y, percent)
+    elif pattern_type == 'perimeter':
+        coords = percentage_perimeter(grid_x, grid_y, percent)
     elif pattern_type == "custom":
         coords = sb_coord_grid(args.sb_grid_csv, grid_x, grid_y)
 
