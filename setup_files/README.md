@@ -1,107 +1,100 @@
-# Structure of YAML Config File for LaZagna
+# LaZagna Configuration Guide
 
-## How It Works
-LaZagna accepts multiple options to run. There are default values for each item in the file `default_options.yaml`. If a particular field is not specified, then the value is pulled from this file.
+This document explains how to configure LaZagna using YAML files.
 
-## Input Parameters:
+## Configuration Basics
 
-- **width**: `integer`
-  - Description: Width of desired 3D FPGA fabric
+LaZagna uses a YAML configuration file to define parameters for your FPGA fabric design. The system loads default values from `default_options.yaml` for any parameters not explicitly specified in your configuration.
 
-- **height**: `integer`
-  - Description: Height of desired 3D FPGA fabric
+## Parameters by Category
 
-- **width_2d**: `integer`
-  - Description: Width of 2D FPGA fabric if `2d` is specified as one of the SB types. This is used to allow the user to specify the size of the 2D Fabric to compare against the 3D fabric. Since a 50x50 2 layer FPGA has twice as many grid locations as the 50x50 1 layer FPGA, so the user can set this parameter to make the 2 fabrics the same equivalent size.
+### FPGA Fabric Dimensions
 
-- **height_2d**: `integer`
-  - Description: Height of 2D FPGA fabric if `2d` is specified as one of the SB types. This is used to allow the user to specify the size of the 2D Fabric to compare against the 3D fabric. Since a 50x50 2 layer FPGA has twice as many grid locations as the 50x50 1 layer FPGA, so the user can set this parameter to make the 2 fabrics the same equivalent size.
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `width` | integer | Width of the 3D FPGA fabric | `50` |
+| `height` | integer | Height of the 3D FPGA fabric | `50` |
+| `width_2d` | integer | Width of 2D FPGA fabric (when comparing to 3D) | `70` |
+| `height_2d` | integer | Height of 2D FPGA fabric (when comparing to 3D) | `70` |
+| `channel_width` | integer | Channel width for the FPGA fabric (2D only) | `100` |
 
-- **channel_width**: `integer`
-  - Description: Channel width to use for FPGA fabric. This only applies to the 2D channel width. The vertical channel width is currently modified by adjsuting the number of 3D SBs, and number of interlayer grid pins. (3D vertical channel width option to be added soon!)
+### 3D Connectivity Configuration
 
-- **percent_connectivity**: `list of integers`
-  - Description: Percentage of the SBs on the FPGA that are 3D.
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `percent_connectivity` | list of integers | Percentage of switch boxes that are 3D | `[10, 20, 30]` |
+| `connection_type` | list of strings | Pattern for 3D SBs (options: `subset`, `custom`) | `["subset"]` |
+| `vertical_connectivity` | integer | Number of channels connecting vertically (not yet implemented) | `4` |
 
-- **place_algorithm**: `list of strings`
-  - Description: Bounding Box computation method for 3D FPGA when using VTR. Options are: "cube_bb" and "per_layer_bb", see VTR documentation to understand the difference. 
+### Switch Box Configuration
 
-- **connection_type**: `list of strings`
-  - Description: Pattern to use for 3D SBs. Available options: `subset`, `custom`. If `custom` is chosen then `sb_3d_pattern` needs to be set. 
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `sb_switch_name` | string | Base switch name in VTR architecture file for vertical delay calculation | `mux2_size8` |
+| `sb_segment_name` | string | Segment in VTR architecture file for 3D SB interlayer connections | `wire` |
+| `sb_input_pattern` | list | Pattern defining 3D SB inputs | `[...]` |
+| `sb_output_pattern` | list | Pattern defining 3D SB outputs | `[...]` |
 
-- **linked_params**: `object`
-  - Structure containing **type_sb_arch_mapping** parameter: Liking each vertical connection type to it's VTR architecture XML file.
-    - **type_sb**: `string`
-      - Description: Vertical Connection type to use. Options are: `2d`, `3d_cb`, `3d_cb_out_only`, `3d_cb_in_only`, `hybrid_cb`, `hybrid_cb_out`, `hybrid_cb_in`, `3d_sb`. New options can be added by modifying the code. 
-    - **arch_file**: `string`
-      - Description: Path to VTR architecture XML that links to the type_sb specified
+### SB Location Pattern
 
-- **num_seeds**: `integer`
-  - Description: Number of random seeds to test. Only used when `random_seed` is `True`
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `sb_location_pattern` | list of strings | Pattern for SB locations. Options: `core`, `perimeter`, `rows`, `columns`, `repeated_interval`, `custom` | `["core"]` |
+| `sb_grid_csv_path` | string | Path to CSV file defining custom SB patterns (required when using `custom` pattern) | `"patterns/custom_grid.csv"` |
 
-- **random_seed**: `boolean`
-  - Description: Boolean to describe whether to use a random seed for placement or not.
+### Delay Configuration
 
-- **non_random_seed**: `integer`
-  - Description: Seed to use for placement if `random_seed` is `False`.
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `vertical_delay` | list of floats | Exact delay values for vertical connections (in seconds) | `[1e-9, 5e-9]` |
+| `vertical_delay_ratio` | list of floats | Ratio of vertical to horizontal delay | `[1.0, 2.0]` |
+| `base_delay_switch` | string | Switch name for calculating vertical delay ratio | `mux2_size8` |
+| `update_arch_delay` | boolean | Whether to modify vertical delays in the VTR architecture file | `true` |
 
-- **additional_vpr_options**: `string`
-  - Description: Additional options to run with VPR. See [VPR Command Line Options Documentation](https://docs.verilogtorouting.org/en/latest/vpr/command_line_usage/) for more details on options available.
+### VTR/VPR Configuration
 
-- **cur_loop_identifier**: `string`
-  - Description: [description here]
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `place_algorithm` | list of strings | 3D bounding box computation method (`cube_bb` or `per_layer_bb`) | `["cube_bb"]` |
+| `linked_params` | object | Maps connection types to architecture files | See example below |
+| `additional_vpr_options` | string | Extra VPR command-line options | `"--timing_analysis off"` |
 
-- **is_verilog_benchmarks**: `boolean`
-  - Description: Boolean indicator to tell if the benchmarks being run are verilog or BLIF format. If verilog yosys is invoked to synthesize the benchmarks otherwise, this step is skipped. Note: if the user desires to generate the testbench for the fabric then the verilog of the benchmarks is also required to generate the correct testbench.
+### Benchmark Configuration
 
-- **benchmarks_dir**: `string`
-  - Description: Directory containing the benchmarks to be run. See `benchmarks` directory to understand setup of this directory.
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `is_verilog_benchmarks` | boolean | Whether benchmarks are in Verilog (vs BLIF) format | `true` |
+| `benchmarks_dir` | string | Directory containing benchmarks | `"/path/to/benchmarks/koios"` |
 
-- **vertical_connectivity**: `integer`
-  - Description: **To Be Implemented** Option to decide number of channels that connect vertically.
+### Seed Configuration
 
-- **sb_switch_name**: `string`
-  - Description: Base switch name in vtr architecture xml file to use for vertical delay calculation. The switch's delay is used as the base delay value and then multiplied by the `vertical_delay_ratio` if specified.
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `num_seeds` | integer | Number of random seeds to test | `3` |
+| `random_seed` | boolean | Whether to use random seeds for placement | `true` |
+| `non_random_seed` | integer | Specific seed if not using random seeds | `1` |
 
-- **sb_segment_name**: `string`
-  - Description: Segment in vtr architecture xml file to use for 3D SB interlayer connections.
+## Examples
 
-- **sb_input_pattern**: `list`
-  - Description: Pattern to use for 3D SB inputs.
+### Linked Parameters Example
+```yaml
+linked_params:
+  type_sb_arch_mapping:
+    - type_sb: "2d"
+      arch_file: "architectures/k6_N10_mem32K_40nm.xml"
+    - type_sb: "3d_cb"
+      arch_file: "architectures/k6_N10_mem32K_40nm_3D.xml"
+```
+### Switch Interlayer Pairs Example
+```yaml
+switch_interlayer_pairs:
+  - switch_2d: "mux2_size8"
+    switch_3d: "mux2_size8_3d"
+```
+## CSV Pattern Format
 
-- **sb_output_pattern**: `list`
-  - Description: Patternt to use for 3D SB outputs.
+When using `custom` for the `sb_location_pattern`, provide a CSV file where:
+- 'X' represents a 3D switch box location
+- 'O' represents a 2D switch box location
 
-- **sb_location_pattern**: `list[str]`
-  - Specifies the pattern for SB locations. Available pattern options are:
-    - `core`
-    - `perimeter`
-    - `rows`
-    - `columns`
-    - `repeated_interval`
-    - `custom`
-  
-  Note: When selecting `custom`, you must also provide the `sb_grid_csv_path` parameter.
-
-- **sb_grid_csv_path**: `str`
-  - Path to a CSV file defining custom SB location patterns
-  - The CSV should contain a grid of 'X' and 'O' characters where:
-    - 'X' represents a 3D SB location
-    - 'O' represents a 2D SB location
-  - Example patterns for 100x100 grids can be found in the `csv_patterns` directory
-
-- **vertical_delay**: `list of floats`
-  - Description: List of all vertical delays to test. This is the exact delay to be used for vertical connections. Note: Provide the delay in scientific notation. For example: 1ns would be 1e-9
-
-- **vertical_delay_ratio**: `list of floats`
-  - Description: List of all the vertical delay ratios desired to be tested. 
-
-- **base_delay_switch**: `string`
-  - Description: Switch name in VTR architecture XML file to use when calculating the vertical delay based on a ratio.
-
-- **switch_interlayer_pairs**: `object`
-  - Maps each 2D switch in the VTR Architecture XML to it's 3D equivalent. This is used for calculating new vertical delay ratios to use.
-    
-
-- **update_arch_delay**: `boolean`
-  - Description: Whether the vertical delays in the VTR architecture file should be modified or not. 
+Example patterns are available in the `csv_patterns` directory.
