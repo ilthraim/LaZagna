@@ -72,17 +72,32 @@ LaZagna accepts multiple options to run. There are default values for each item 
 - **sb_output_pattern**: `list`
   - Description: [description here]
 
-- **sb_location_pattern**: `list of strings`
-  - Description: [description here]
+- **sb_location_pattern**: `list[str]`
+  - Specifies the pattern for SB locations. Available pattern options are:
+    - `core`
+    - `perimeter`
+    - `rows`
+    - `columns`
+    - `repeated_interval`
+    - `custom`
+  
+  Note: When selecting `custom`, you must also provide the `sb_grid_csv_path` parameter.
 
-- **sb_grid_csv_path**: `string`
-  - Description: [description here]
+- **sb_grid_csv_path**: `str`
+  - Path to a CSV file defining custom SB location patterns
+  - The CSV should contain a grid of 'X' and 'O' characters where:
+    - 'X' represents a 3D SB location
+    - 'O' represents a 2D SB location
+  - Example patterns for 100x100 grids can be found in the `csv_patterns` directory
+
+- **vertical_delay**: `list of floats`
+  - Description: List of all vertical delays to test. This is the exact delay to be used for vertical connections. Note: Provide the delay in scientific notation. For example: 1ns would be 1e-9
 
 - **vertical_delay_ratio**: `list of floats`
-  - Description: [description here]
+  - Description: List of all the vertical delay ratios desired to be tested. 
 
 - **base_delay_switch**: `string`
-  - Description: [description here]
+  - Description: Switch name in VTR architecture XML file to use when calculating the vertical delay based on a ratio.
 
 - **switch_interlayer_pairs**: `object`
   - Map with keys and values
