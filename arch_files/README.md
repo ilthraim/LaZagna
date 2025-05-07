@@ -5,4 +5,4 @@ LaZagna relies on VTR for execution. The `templates` folder contains examples sh
 
 ## Resources
 - Template examples: See `templates` folder
-- Full documentation: [VTR Documentation](https://docs.verilogtorouting.org/en/latest/)
+- Full documentation for architecture file format: [VTR Architecture XML Documentation](https://docs.verilogtorouting.org/en/latest/arch/reference/)
