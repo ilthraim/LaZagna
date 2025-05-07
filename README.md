@@ -2,7 +2,7 @@
 ## Repository Organization and Documentation is currently work in progress :construction_worker: :construction:
 
 To run:
-```python
+```
 python3 lazagna/main.py -f <path_to_setup_file>
 ```
 
