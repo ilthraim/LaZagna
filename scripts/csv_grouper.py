@@ -1,6 +1,7 @@
 import os
 import csv
 import sys
+import re
 
 csv_folder = "results_csvs"
 
@@ -14,22 +15,19 @@ else:
 if input_folder.endswith("/"):
     input_folder = input_folder[:-1]
 
-# Define the base results folder
-results_folder = os.path.join(os.path.dirname(input_folder), "results_csvs")
+# Define the results folder
+results_folder = csv_folder
 
 # Create the results folder if it doesn't exist
 os.makedirs(results_folder, exist_ok=True)
 
-print("results folder: ", results_folder)
-
-# Extract the folder name from the input folder path
-folder_name = os.path.basename(input_folder)
-
-# Construct the output file path
-output_file = os.path.join(results_folder, folder_name + "_results.csv")
+# Define the output file path within the results folder
+output_file = os.path.join(results_folder, input_folder + "_results.csv")
 
 # Initialize a list to store all rows
 all_data = []
+
+benchmark_name = re.compile(r"(.+)_results_.+\.csv")
 
 # Iterate through all files in the input folder
 for filename in os.listdir(input_folder):
@@ -45,6 +43,12 @@ for filename in os.listdir(input_folder):
             if len(rows) >= 2:
                 headers = rows[0]
                 data = rows[1]
+
+                benchmark_match = benchmark_name.match(filename)
+                if benchmark_match:
+                    benchmark = benchmark_match.group(1)
+                    data.append(benchmark)
+                    headers.append("Benchmark Name")
 
                 # Modify the first data value as specified
                 original_value = data[0]
