@@ -82,15 +82,16 @@ LaZagna uses a YAML configuration file to define parameters for your FPGA fabric
 linked_params:
   type_sb_arch_mapping:
     - type_sb: "2d"
-      arch_file: "architectures/k6_N10_mem32K_40nm.xml"
+      arch_file: "/path/to/arch_files/templates/basic/vtr_2d_arch.xml"
     - type_sb: "3d_cb"
-      arch_file: "architectures/k6_N10_mem32K_40nm_3D.xml"
+      arch_file: "/path/to/arch_files/templates/basic/vtr_3d_cb_arch.xml"
 ```
 ### Switch Interlayer Pairs Example
 ```yaml
 switch_interlayer_pairs:
-  - switch_2d: "mux2_size8"
-    switch_3d: "mux2_size8_3d"
+  L4_driver: "L4_inter_layer_driver"
+  L16_driver: "L16_inter_layer_driver"
+  ipin_cblock: "ipin_inter_layer_cblock"
 ```
 ## CSV Pattern Format
 
