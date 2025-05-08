@@ -1,11 +1,74 @@
 # <img src="./images/LaZagna_logo_1_no_bg.png" alt="Logo" width="100" style="vertical-align:middle; margin-right:8px;"> LaZagna: 3D FPGA Architecture Exploration Tool 
-## Repository Organization and Documentation is currently work in progress :construction_worker: :construction:
 
-To run:
+> ⚠️ **Note**: Repository organization and documentation are currently under development. :construction_worker: :construction:
+
+## Table of Contents
+
+- [Building](#building)
+- [Usage](#usage)
+- [Directory Structure](#directory-structure)
+- [Contributing](#contributing)
+
+## Building
+
+Build the project using make:
+```bash
+make all
 ```
+
+For faster build times, use parallel processing with the -j flag:
+
+```bash
+make all -j4  # Uses 4 cores
+```
+# Usage
+## Running LaZagna
+Execute the tool using:
+
+```bash
 python3 lazagna/main.py -f <path_to_setup_file>
 ```
 
-See `setup_files` directory's README for how the setup file should look. It specifies the options alows. The outputs will be in `tasks_run` directory with all the results and `results` folder with only CSV files containing each benchmarks palcement and routing results. 
+Optional flag:
+    `-v`: Enable verbose output
 
-`-v` options can be used for a verbose output. 
+## Setup Files
+Configuration is done through setup files. See the `setup_files` directory for:
+
+1. Setup file format
+2. Available options
+3. Example configurations
+
+## Output Structure
+
+LaZagna generates two types of output:
+
+`tasks_run/`: Contains detailed results and analysis
+`results/`: CSV files with placement and routing results for each benchmark
+
+## Cleaning Up
+Clean specific outputs:
+
+```bash
+
+# Remove output files
+make clean_files
+
+# Clean OpenFPGA build
+make clean_openfpga
+
+# Clean everything
+make clean
+```
+
+## Directory Structure
+To Do
+
+## License
+This project is licensed under the MIT License
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Copyright (c) 2025 Ismael Youssef
+
+See the [LICENSE](./LICENSE) file for full license details.
