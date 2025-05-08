@@ -31,8 +31,8 @@ LaZagna uses a YAML configuration file to define parameters for your FPGA fabric
 
 | Parameter | Type | Description | Example |
 |-----------|------|-------------|---------|
-| `sb_switch_name` | string | Base switch name in VTR architecture file for vertical delay calculation | `mux2_size8` |
-| `sb_segment_name` | string | Segment in VTR architecture file for 3D SB interlayer connections | `wire` |
+| `sb_switch_name` | string | Switch in VTR architecture file for 3D SB interlayer connections | `3D_SB_switch` |
+| `sb_segment_name` | string | Segment in VTR architecture file for 3D SB interlayer connections | `3D_SB_connection` |
 | `sb_input_pattern` | list | Pattern defining 3D SB inputs | `[...]` |
 | `sb_output_pattern` | list | Pattern defining 3D SB outputs | `[...]` |
 
@@ -49,7 +49,7 @@ LaZagna uses a YAML configuration file to define parameters for your FPGA fabric
 |-----------|------|-------------|---------|
 | `vertical_delay` | list of floats | Exact delay values for vertical connections (in seconds) | `[1e-9, 5e-9]` |
 | `vertical_delay_ratio` | list of floats | Ratio of vertical to horizontal delay | `[1.0, 2.0]` |
-| `base_delay_switch` | string | Switch name for calculating vertical delay ratio | `mux2_size8` |
+| `base_delay_switch` | string | Switch name for calculating vertical delay ratio | `L4_driver` |
 | `update_arch_delay` | boolean | Whether to modify vertical delays in the VTR architecture file | `true` |
 
 ### VTR/VPR Configuration

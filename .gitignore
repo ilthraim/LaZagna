@@ -22,7 +22,7 @@ task/designs/*
 vertical_delay_test_data/
 
 results/*
-
+!results/README.md
 yosys_temp/
 
 rrg_3d/
