@@ -2,7 +2,7 @@
 
 > ⚠️ **Note**: Repository organization and documentation are currently under development. :construction_worker: :construction:
 
-LaZagna is an open-source framework for the automated design and exploration of 3D FPGA architectures. It provides an end-to-end flow that includes high-level architectural specification, synthesizable RTL generation, and bitstream production. LaZagna supports a broad and customizable 3D design space, including flexible vertical interconnect strategies, 3D switch block patterns and placement, and heterogeneous configurations. By enabling both architectural modeling and functional validation, LaZagna serves as a versatile tool for advancing research and development in 3D FPGA design.
+LaZagna is an open-source tool for designing and evaluating 3D FPGA architectures. It supports customizable vertical interconnects, layer heterogeneity, and switch block patterns. LaZagna generates synthesizable RTL and bitstreams, enabling full architectural exploration from high-level specs to physical design.
 
 ## Table of Contents
 
