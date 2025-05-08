@@ -1,4 +1,5 @@
 # Architecture File Setup Guide
+> ⚠️ **Note**: Under Development :construction_worker: :construction:
 
 ## Overview
 LaZagna relies on VTR for execution. The `templates` folder contains examples showing the correct structure for each architecture connection type.

@@ -1,4 +1,5 @@
 # LaZagna Configuration Guide
+> ⚠️ **Note**: Under Development :construction_worker: :construction:
 
 This document explains how to configure LaZagna using YAML files.
 
