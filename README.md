@@ -9,6 +9,7 @@ LaZagna is an open-source tool for designing and evaluating 3D FPGA architecture
 - [Building](#building)
 - [Usage](#usage)
 - [Directory Structure](#directory-structure)
+- [Cleaning Up](#cleaning-up)
 - [License](#license)
 
 ## Building
