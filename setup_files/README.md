@@ -33,8 +33,8 @@ LaZagna uses a YAML configuration file to define parameters for your FPGA fabric
 |-----------|------|-------------|---------|
 | `sb_switch_name` | string | Switch in VTR architecture file for 3D SB interlayer connections | `3D_SB_switch` |
 | `sb_segment_name` | string | Segment in VTR architecture file for 3D SB interlayer connections | `3D_SB_connection` |
-| `sb_input_pattern` | list | Pattern defining 3D SB inputs | `[...]` |
-| `sb_output_pattern` | list | Pattern defining 3D SB outputs | `[...]` |
+| `sb_input_pattern` | list | Pattern defining 3D SB inputs | `[/path/to.]` |
+| `sb_output_pattern` | list | Pattern defining 3D SB outputs | `[/path/to.]` |
 
 ### SB Location Pattern
 

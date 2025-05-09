@@ -17,18 +17,18 @@ connection_type: ["subset"]
 linked_params:
   type_sb_arch_mapping:
     - type_sb: "2d"
-      arch_file: "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
+      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
     - type_sb: "combined"
-      arch_file: "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
+      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
     
     # - type_sb: "3d_cb"
-    #   arch_file: "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+    #   arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
     # - type_sb: "3d_cb_out_only"
-    #   arch_file: "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
+    #   arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
     # - type_sb: "hybrid_cb"
-    #   arch_file: "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+    #   arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
     # - type_sb: "hybrid_cb_out"
-    #   arch_file: "/home/Ismael/3DFADE/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
+    #   arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
 
 random_seed: True
 
@@ -40,7 +40,7 @@ cur_loop_identifier: "random_seed_test3"
 
 is_verilog_benchmarks: True
 
-benchmarks_dir: "/home/Ismael/3DFADE/benchmarks/ITD_quick"
+benchmarks_dir: "/path/to/benchmarks/ITD_quick"
 
 vertical_connectivity: 1
 
