@@ -5,12 +5,20 @@
 LaZagna is an open-source tool for designing and evaluating 3D FPGA architectures. It supports customizable vertical interconnects, layer heterogeneity, and switch block patterns. LaZagna generates synthesizable RTL and bitstreams, enabling full architectural exploration from high-level specs to physical design.
 
 ## Table of Contents
-
+- [Installation](#installation)
 - [Building](#building)
 - [Usage](#usage)
 - [Directory Structure](#directory-structure)
 - [Cleaning Up](#cleaning-up)
 - [License](#license)
+
+## Installation
+
+Before building, ensure you have all the Python dependencies installed. You can do this using:
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Building
 
