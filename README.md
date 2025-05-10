@@ -54,7 +54,7 @@ Configuration is done through setup files. See the `setup_files` directory for:
 
 LaZagna generates two types of output:
 
-1. `tasks_run/`: Contains detailed results and analysis
+1. `tasks_run/`: Contains detailed results and generated RTL code
 2. `results/`: CSV files with placement and routing results for each benchmark
 
 ## Cleaning Up
