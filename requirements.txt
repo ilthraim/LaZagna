@@ -1,6 +1,6 @@
 # For LaZagna
 lxml==5.3.0
-numpy==1.21.5
+numpy==1.22.0
 Pillow==11.2.1
 psutil==6.0.0
 PyYAML==6.0.2
