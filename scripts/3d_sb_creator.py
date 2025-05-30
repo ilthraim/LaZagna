@@ -5,6 +5,9 @@ import time
 import random
 import numpy as np
 import argparse
+import tempfile
+import shutil
+import os
 
 args_parser = argparse.ArgumentParser(description="Generate 3D Switch Blocks (SBs) for a given VPR RR Graph without 3D SBs")
 
@@ -122,6 +125,220 @@ def update_node(node):
         new_key = (node.type, int(node.xlow), int(node.ylow), int(node.layer))
         node_index[new_key].append(node)
 
+def read_structure_streaming(file_path):
+    """
+    Streaming version of read_structure that doesn't load entire XML into memory
+    """
+    start_time = time.time()
+    print_verbose(f"Starting streaming read of {file_path}")
+    
+    # Create streaming parser
+    parser = etree.iterparse(
+        file_path,
+        events=('start', 'end'),
+        huge_tree=True,
+        remove_blank_text=True,
+        remove_comments=True
+    )
+    
+    # Process the file
+    extract_nodes_streaming(parser)
+    
+
+    global ptc_counter
+    # Start PTC values for 3D Channels at 1000 to avoid overlap with any horizontal channels. 
+    # IMPORTANT CONSIDERATION: If your channel width is greater than 1000, then you should adjust the starting ptc value to be higher (change 1000 to a larger number that's  channel width)
+    for layer in range(device_max_layer + 1):
+        for x in range(device_max_x + 1):
+            for y in range(device_max_y + 1):
+                key = (layer, x, y)
+                ptc_counter[key] = 1000
+
+    end_time = time.time()
+    print_verbose(f"Reading XML file took {((end_time - start_time) * 1000):0.2f} ms")
+
+def extract_nodes_streaming(parser):
+    """
+    Streaming version of extract_nodes that processes one node at a time
+    """
+    print_verbose(f"Extracting Nodes")
+    start_time = time.time()
+    
+    global max_node_id, device_max_layer, device_max_x, device_max_y, ptc_counter
+    
+    in_rr_nodes = False
+    nodes_processed = 0
+    
+    for event, elem in parser:
+        # Check if we're entering rr_nodes section
+        if event == 'start' and elem.tag == 'rr_nodes':
+            in_rr_nodes = True
+            continue
+        
+        # Check if we're leaving rr_nodes section
+        if event == 'end' and elem.tag == 'rr_nodes':
+            in_rr_nodes = False
+            # Clear the rr_nodes element to free memory
+            elem.clear()
+            break
+        
+        # Process node elements within rr_nodes
+        if event == 'end' and elem.tag == 'node' and in_rr_nodes:
+            node_id = elem.get("id")
+            
+            if node_id:
+                # Update max_node_id
+                max_node_id = max(max_node_id, int(node_id))
+                
+                nodes_processed += 1
+                if nodes_processed % 100000 == 0:
+                    print_verbose(f"\tProcessed {nodes_processed} nodes")
+                
+                type_attr = elem.get("type")
+                
+                # Only process CHANX and CHANY nodes
+                if type_attr in ["CHANX", "CHANY"]:
+                    # Extract location data
+                    loc = elem.find("loc")
+                    if loc is not None:
+                        layer = loc.get("layer")
+                        xhigh = loc.get("xhigh")
+                        xlow = loc.get("xlow")
+                        yhigh = loc.get("yhigh")
+                        ylow = loc.get("ylow")
+                        side = loc.get("side")
+                        ptc_node = loc.get("ptc")
+                        
+                        # Update ptc_counter
+                        # key = (int(layer), int(xlow), int(ylow))
+                        # ptc_counter[key] = max(1000, int(ptc_node))
+                        
+                        # Update device dimensions
+                        device_max_layer = max(device_max_layer, int(layer))
+                        if type_attr == "CHANX":
+                            device_max_x = max(device_max_x, int(xhigh))
+                        elif type_attr == "CHANY":
+                            device_max_y = max(device_max_y, int(yhigh))
+                        
+                        # Get direction
+                        direction = elem.get("direction", "")
+                        
+                        # Get segment info
+                        segment = elem.find("segment")
+                        id_segment = 0
+                        if segment is not None:
+                            id_segment = int(segment.get("segment_id", 0))
+                        
+                        # Create and add node
+                        node = node_struct(
+                            node_id, type_attr, layer, xhigh, xlow, 
+                            yhigh, ylow, side, direction, ptc_node, id_segment
+                        )
+                        add_node(node)
+            
+            # IMPORTANT: Clear the element to free memory
+            elem.clear()
+            # Also remove preceding siblings that are already processed
+            parent = elem.getparent()
+            if parent is not None:
+                # Remove all previous siblings to free memory
+                while elem.getprevious() is not None:
+                    del parent[0]
+    
+    end_time = time.time()
+    print_verbose(f"max_node_id: {max_node_id}")
+    print_verbose(f"Total nodes processed: {nodes_processed}")
+    print_verbose(f"Extracting all nodes took {((end_time - start_time) * 1000):0.2f} ms")
+
+def write_nodes_batch(outfile, nodes_to_write):
+    """
+    Write nodes in batches without creating etree elements
+    """
+    global segment_id
+    
+    BATCH_SIZE = 10000
+    nodes_written = 0
+    
+    for i in range(0, len(nodes_to_write), BATCH_SIZE):
+        batch = nodes_to_write[i:i + BATCH_SIZE]
+        
+        for node in batch:
+            # Write node directly as formatted string
+            outfile.write(f'  <node capacity="1" direction="{node.direction}" id="{node.id}" type="{node.type}">\n')
+            if node.type.endswith("/"):
+                print(f"ERROR: Node type {node.type} should not end with a slash")
+            outfile.write(f'    <loc layer="{node.layer}" ptc="{node.ptc}" xhigh="{node.xhigh}" xlow="{node.xlow}" yhigh="{node.yhigh}" ylow="{node.ylow}"/>\n')
+            outfile.write(f'    <timing C="0" R="0"/>\n')
+            outfile.write(f'    <segment segment_id="{segment_id}"/>\n')
+            outfile.write(f'  </node>\n')
+            
+        nodes_written += len(batch)
+        if nodes_written % 100000 == 0:
+            print_verbose(f"\tWritten {nodes_written}/{len(nodes_to_write)} nodes")
+    
+    print_verbose(f"Finished writing {nodes_written} new nodes")
+
+def write_edges_batch(outfile, edges_to_write):
+    """
+    Write edges in batches
+    """
+    global switch_id
+    
+    BATCH_SIZE = 10000
+    edges_written = 0
+    
+    for i in range(0, len(edges_to_write), BATCH_SIZE):
+        batch = edges_to_write[i:i + BATCH_SIZE]
+        
+        for edge in batch:
+            outfile.write(f'  <edge sink_node="{edge.sink_node}" src_node="{edge.src_node}" switch_id="{edge.switch}"/>\n')
+            
+        edges_written += len(batch)
+        if edges_written % 100000 == 0:
+            print_verbose(f"\tWritten {edges_written}/{len(edges_to_write)} edges")
+    
+    print_verbose(f"Finished writing {edges_written} new edges")
+
+def write_sb_nodes_and_edges_streaming_simple(input_file_path, output_file_path, nodes_to_write, edges_to_write):
+    """
+    Simple line-based streaming that preserves original formatting exactly
+    """
+    start_time = time.time()
+    print_verbose(f"Starting streaming write: {len(nodes_to_write)} nodes, {len(edges_to_write)} edges")
+    
+    temp_fd, temp_path = tempfile.mkstemp(suffix='.xml', dir=os.path.dirname(output_file_path))
+    
+    try:
+        with open(input_file_path, 'r', encoding='utf-8') as infile, \
+             os.fdopen(temp_fd, 'w', encoding='utf-8') as outfile:
+            
+            nodes_written = False
+            edges_written = False
+            
+            # Process line by line to preserve exact formatting
+            for line in infile:
+                # Insert new nodes before </rr_nodes>
+                if '</rr_nodes>' in line and not nodes_written and nodes_to_write:
+                    write_nodes_batch(outfile, nodes_to_write)
+                    nodes_written = True
+                
+                # Insert new edges before </rr_edges>
+                elif '</rr_edges>' in line and not edges_written and edges_to_write:
+                    write_edges_batch(outfile, edges_to_write)
+                    edges_written = True
+                
+                # Write the original line exactly as it was
+                outfile.write(line)
+        
+        shutil.move(temp_path, output_file_path)
+        end_time = time.time()
+        print_verbose(f"Streaming write completed in {((end_time - start_time) * 1000):0.2f} ms")
+        
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        raise e
+
 def read_structure(file_path, parser):
     start_time = time.time()
     try:
@@ -164,9 +381,9 @@ def extract_nodes(root):
         side = loc.get("side")
         ptc_node = loc.get("ptc")
 
-        global ptc_counter
-        key = (int(layer), int(xlow), int(ylow))
-        ptc_counter[key] = max(1000, int(ptc_node))
+        # global ptc_counter
+        # key = (int(layer), int(xlow), int(ylow))
+        # ptc_counter[key] = max(1000, int(ptc_node))
 
         direction = node.get("direction")
 
@@ -184,7 +401,15 @@ def extract_nodes(root):
 
         add_node(node_struct(node_id, type, layer, xhigh, xlow, yhigh, ylow, side, direction, ptc_node, id_segment))
 
-    
+    global ptc_counter
+    # Start PTC values for 3D Channels at 1000 to avoid overlap with any horizontal channels. 
+    # IMPORTANT CONSIDERATION: If your channel width is greater than 1000, then you should adjust the starting ptc value to be higher (change 1000 to a larger number that's  channel width)
+    for layer in range(device_max_layer + 1):
+        for x in range(device_max_x + 1):
+            for y in range(device_max_y + 1):
+                key = (layer, x, y)
+                ptc_counter[key] = 1000
+
     end_time = time.time()
     print_verbose(f"max_node_id: {max_node_id}")
     print_verbose(f"Extracting all nodes took { ((end_time - start_time) * 1000):0.2f} ms")
@@ -388,9 +613,12 @@ def connect_sb_nodes_combined(input_nodes, output_nodes, x, y, input_layer, outp
     ptc_val = ptc_counter[key]
     ptc_val += 1
     input_layer_none_nodes =[create_node(max_node_id + 1, "CHANX", input_layer, x, x, y, y, "", "NONE", ptc_val, segment_id)]
+    ptc_counter[key] = ptc_val
+
+    key = (int(output_layer), int(x), int(y))
+    ptc_val = ptc_counter[key]
     ptc_val += 1
     output_layer_none_nodes = [create_node(max_node_id + 2, "CHANX", output_layer, x, x, y, y, "", "NONE", ptc_val, segment_id)]
-
     ptc_counter[key] = ptc_val
     
     max_node_id += 2
@@ -904,30 +1132,30 @@ def create_combined_sb(input_nodes, output_nodes, x, y, input_layer, output_laye
     x_y_chanx_output_nodes, x_y_chany_output_nodes, x_plus_1_y_chanx_output_nodes, x_y_plus_1_chany_output_nodes = sort_chan_nodes_by_direction(output_nodes, x, y)
 
     #Print different lens for debugging
-    print_verbose(f"{'*' * 10}")
-    print_verbose(f"X: {x} Y: {y} Input Layer: {input_layer} Output Layer: {output_layer}")
-    print_verbose(f"Input Nodes:                  {len(input_nodes)}                  Output Nodes: {len(output_nodes)}")
+    # print_verbose(f"{'*' * 10}")
+    # print_verbose(f"X: {x} Y: {y} Input Layer: {input_layer} Output Layer: {output_layer}")
+    # print_verbose(f"Input Nodes:                  {len(input_nodes)}                  Output Nodes: {len(output_nodes)}")
 
-    print_verbose(f"x_y_chanx_input_nodes:        {len(x_y_chanx_input_nodes)}        x_y_chanx_output_nodes: {len(x_y_chanx_output_nodes)}")   
-    print_verbose(f"x_y_chany_input_nodes:        {len(x_y_chany_input_nodes)}        x_y_chany_output_nodes: {len(x_y_chany_output_nodes)}")    
-    print_verbose(f"x_plus_1_y_chanx_input_nodes: {len(x_plus_1_y_chanx_input_nodes)} x_plus_1_y_chanx_output_nodes: {len(x_plus_1_y_chanx_output_nodes)}")
-    print_verbose(f"x_y_plus_1_chany_input_nodes: {len(x_y_plus_1_chany_input_nodes)} x_y_plus_1_chany_output_nodes: {len(x_y_plus_1_chany_output_nodes)}")
+    # print_verbose(f"x_y_chanx_input_nodes:        {len(x_y_chanx_input_nodes)}        x_y_chanx_output_nodes: {len(x_y_chanx_output_nodes)}")   
+    # print_verbose(f"x_y_chany_input_nodes:        {len(x_y_chany_input_nodes)}        x_y_chany_output_nodes: {len(x_y_chany_output_nodes)}")    
+    # print_verbose(f"x_plus_1_y_chanx_input_nodes: {len(x_plus_1_y_chanx_input_nodes)} x_plus_1_y_chanx_output_nodes: {len(x_plus_1_y_chanx_output_nodes)}")
+    # print_verbose(f"x_y_plus_1_chany_input_nodes: {len(x_y_plus_1_chany_input_nodes)} x_y_plus_1_chany_output_nodes: {len(x_y_plus_1_chany_output_nodes)}")
 
-    print_verbose(f"{'*' * 10}")    
-    print_verbose(f"x_y_chanx_input_nodes:  {x_y_chanx_input_nodes}")
-    print_verbose(f"x_y_chanx_output_nodes: {x_y_chanx_output_nodes}")
+    # print_verbose(f"{'*' * 10}")    
+    # print_verbose(f"x_y_chanx_input_nodes:  {x_y_chanx_input_nodes}")
+    # print_verbose(f"x_y_chanx_output_nodes: {x_y_chanx_output_nodes}")
 
-    print_verbose(f"{'*' * 5}")
-    print_verbose(f"x_y_chany_input_nodes:  {x_y_chany_input_nodes}")
-    print_verbose(f"x_y_chany_output_nodes: {x_y_chany_output_nodes}")
+    # print_verbose(f"{'*' * 5}")
+    # print_verbose(f"x_y_chany_input_nodes:  {x_y_chany_input_nodes}")
+    # print_verbose(f"x_y_chany_output_nodes: {x_y_chany_output_nodes}")
 
-    print_verbose(f"{'*' * 5}")
-    print_verbose(f"x_plus_1_y_chanx_input_nodes:  {x_plus_1_y_chanx_input_nodes}")
-    print_verbose(f"x_plus_1_y_chanx_output_nodes: {x_plus_1_y_chanx_output_nodes}")
+    # print_verbose(f"{'*' * 5}")
+    # print_verbose(f"x_plus_1_y_chanx_input_nodes:  {x_plus_1_y_chanx_input_nodes}")
+    # print_verbose(f"x_plus_1_y_chanx_output_nodes: {x_plus_1_y_chanx_output_nodes}")
 
-    print_verbose(f"{'*' * 5}")    
-    print_verbose(f"x_y_plus_1_chany_input_nodes:  {x_y_plus_1_chany_input_nodes}")
-    print_verbose(f"x_y_plus_1_chany_output_nodes: {x_y_plus_1_chany_output_nodes}")
+    # print_verbose(f"{'*' * 5}")    
+    # print_verbose(f"x_y_plus_1_chany_input_nodes:  {x_y_plus_1_chany_input_nodes}")
+    # print_verbose(f"x_y_plus_1_chany_output_nodes: {x_y_plus_1_chany_output_nodes}")
 
     # assert len(x_y_chanx_input_nodes) == len(x_y_chanx_output_nodes)
     # assert len(x_y_chany_input_nodes) == len(x_y_chany_output_nodes)
@@ -1162,7 +1390,7 @@ def skip_loop(grid_x, grid_y, percent):
     for coord in coords:
         yield coord
 
-def create_sb(structure, connection_type="subset", vertical_connectivity_percentage=1):
+def create_sb(structure, connection_type="subset", vertical_connectivity_percentage=1, base_rrg_path="", output_rrg_path=""):
     print_verbose("Creating SB connections")
     
     start_time = time.time()
@@ -1186,8 +1414,8 @@ def create_sb(structure, connection_type="subset", vertical_connectivity_percent
     # For each location, find all relevant chans that either enter or exit th SB
     for x, y in skip_loop(device_max_x, device_max_y, percent_connectitivty):
 
-        print_verbose(f"{'*' * 60}")
-        print_verbose("Creating SB for x:", x, "y:", y)
+        # print_verbose(f"{'*' * 60}")
+        # print_verbose("Creating SB for x:", x, "y:", y)
         
 
         num_created += 1
@@ -1209,9 +1437,9 @@ def create_sb(structure, connection_type="subset", vertical_connectivity_percent
         for n in range(1, device_max_layer + 1):
             m = n - 1
 
-            print_verbose(f"{'*' * 60}")
-            print_verbose(f"Creating SB connections between layer {n} and layer {m} at x: {x} y: {y}")
-            print_verbose(f"{'*' * 40}")
+            # print_verbose(f"{'*' * 60}")
+            # print_verbose(f"Creating SB connections between layer {n} and layer {m} at x: {x} y: {y}")
+            # print_verbose(f"{'*' * 40}")
 
             # 1. Find nodes at layer n and n-1 (n-1 layer is refered to as layer m)
             #    * Note: M doesnt have to be n-1, it can be any layer, if user wants to create a connection for a SB that spans more than 1 layer
@@ -1228,13 +1456,13 @@ def create_sb(structure, connection_type="subset", vertical_connectivity_percent
             input_layer_n_none_nodes, output_layer_m_none_nodes, new_edges_1 = create_combined_sb(layer_n_sb_input_nodes, layer_m_sb_output_nodes, x, y, n, m, connection_type, vertical_connectivity_percentage, max_number_of_crossings=max_vertical_crossings)
             
             # 5. Make print statements for debugging
-            print_verbose(f"Created {len(input_layer_m_none_nodes)} input none nodes for layer {m} connection to layer {n}")
-            print_verbose(f"Created {len(output_layer_n_none_nodes)} output none nodes for layer {n} connection to layer {m}")
-            print_verbose(f"Created {len(input_layer_n_none_nodes)} input none nodes for layer {n} connection to layer {m}")
-            print_verbose(f"Created {len(output_layer_m_none_nodes)} output none nodes for layer {m} connection to layer {n}")
+            # print_verbose(f"Created {len(input_layer_m_none_nodes)} input none nodes for layer {m} connection to layer {n}")
+            # print_verbose(f"Created {len(output_layer_n_none_nodes)} output none nodes for layer {n} connection to layer {m}")
+            # print_verbose(f"Created {len(input_layer_n_none_nodes)} input none nodes for layer {n} connection to layer {m}")
+            # print_verbose(f"Created {len(output_layer_m_none_nodes)} output none nodes for layer {m} connection to layer {n}")
 
-            print_verbose(f"Created {len(new_edges_0)} edges to connect layer {m} to layer {n}")
-            print_verbose(f"Created {len(new_edges_1)} edges to connect layer {n} to layer {m}")
+            # print_verbose(f"Created {len(new_edges_0)} edges to connect layer {m} to layer {n}")
+            # print_verbose(f"Created {len(new_edges_1)} edges to connect layer {n} to layer {m}")
 
             # 6. Extened the nodes and edges to write
             nodes_to_write.extend(input_layer_m_none_nodes)
@@ -1245,7 +1473,7 @@ def create_sb(structure, connection_type="subset", vertical_connectivity_percent
             edges_to_write.extend(new_edges_0)
             edges_to_write.extend(new_edges_1)
 
-        print_verbose(f"{'*' * 10}")
+        # print_verbose(f"{'*' * 10}")
 
         # print_verbose(f"Created {len(input_layer_0_none_nodes)} input none nodes for layer 0 ")
         # print_verbose(f"Created {len(output_layer_0_none_nodes)} output none nodes for none nodes for layer 1")
@@ -1282,8 +1510,10 @@ def create_sb(structure, connection_type="subset", vertical_connectivity_percent
 
     print_verbose("Writing SB Nodes and Edges")
     writing_start_time = time.time()
-    write_sb_nodes(structure, nodes_to_write)
-    write_sb_edges(structure, edges_to_write)
+    # write_sb_nodes(structure, nodes_to_write)
+    # write_sb_edges(structure, edges_to_write)
+    write_sb_nodes_and_edges_streaming_simple(base_rrg_path, output_rrg_path, nodes_to_write, edges_to_write)
+
 
     writing_end_time = time.time()
     print_verbose(f"Writing SB Nodes and Edges took { ((writing_end_time - writing_start_time) * 1000):0.2f} ms")
@@ -1328,6 +1558,71 @@ def extract_switch_and_segment(structure, segment_name, switch_name):
     if not found_segment and segment_name != "":
         print(f"ERROR: Segment {segment_name} not found in architecture file.")
         exit(1)
+
+def extract_switches_and_segments_streaming(file_path, segment_name, switch_name):
+    """
+    Extract only switches and segments, return early without processing nodes
+    """
+    global switch_id, segment_id, pattern_dict
+    
+    parser = etree.iterparse(
+        file_path,
+        events=('start', 'end'),
+        huge_tree=True
+    )
+    
+    in_switches = False
+    in_segments = False
+    found_switch = False
+    found_segment = False
+    segments_done = False
+    
+    for event, elem in parser:
+        # Process switches
+        if event == 'start' and elem.tag == 'switches':
+            in_switches = True
+        elif event == 'end' and elem.tag == 'switches':
+            in_switches = False
+            if not found_switch and switch_name != "":
+                print(f"ERROR: Switch {switch_name} not found in architecture file.")
+                exit(1)
+            elem.clear()
+        elif event == 'end' and elem.tag == 'switch' and in_switches:
+            name = elem.get('name')
+            if name == switch_name:
+                switch_id = int(elem.get('id'))
+                found_switch = True
+            elem.clear()
+        
+        # Process segments
+        elif event == 'start' and elem.tag == 'segments':
+            in_segments = True
+        elif event == 'end' and elem.tag == 'segments':
+            in_segments = False
+            segments_done = True
+            if not found_segment and segment_name != "":
+                print(f"ERROR: Segment {segment_name} not found in architecture file.")
+                exit(1)
+            elem.clear()
+        elif event == 'end' and elem.tag == 'segment' and in_segments:
+            name = elem.get('name')
+            id_val = int(elem.get('id'))
+            
+            if name in pattern_dict:
+                pattern_dict[id_val] = pattern_dict.pop(name)
+            
+            if name == segment_name:
+                segment_id = id_val
+                found_segment = True
+            elem.clear()
+        
+        # Once we've processed both switches and segments, we can stop
+        if segments_done and (found_switch or switch_name == "") and (found_segment or segment_name == ""):
+            break
+        
+        # Clean up any other elements we encounter
+        if event == 'end':
+            elem.clear()
 
 def parse_arch_xml(arch_file):
     '''
@@ -1414,14 +1709,18 @@ def main():
             resolve_entities=False  # Saves some memory
         )
 
-    structure, tree = read_structure(file_path, parser)
+    # structure, tree = read_structure(file_path, parser)
 
-    extract_switch_and_segment(structure, segment_name, switch_name)
+    # extract_switch_and_segment(structure, segment_name, switch_name)
 
-    extract_nodes(structure)
-    create_sb(structure, connection_type, vertical_connectivity_percentage)
+    # extract_nodes(structure)
 
-    tree.write(output_file_path, pretty_print=False, xml_declaration=True, encoding="UTF-8", compression=None)
+    read_structure_streaming(file_path)
+    extract_switches_and_segments_streaming(file_path, segment_name, switch_name)
+
+    create_sb(None, connection_type, vertical_connectivity_percentage, base_rrg_path=file_path, output_rrg_path=output_file_path)
+
+    # tree.write(output_file_path, pretty_print=False, xml_declaration=True, encoding="UTF-8", compression=None)
 
     end_time = time.time()
     print(f"Generating SBs took { ((end_time - start_time) * 1000):0.2f} ms")
