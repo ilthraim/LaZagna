@@ -4,10 +4,13 @@
 MAKEFLAGS =
 
 # Default target, run all tasks
-all: init update build
+all: prereqs init build
+
+prereqs:
+	./install_apt_packages.sh
 
 # Initialize and update submodules recursively
-init update:
+init:
 	git submodule update --init --recursive
 
 # Build OpenFPGA
