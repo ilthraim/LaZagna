@@ -1,0 +1,113 @@
+# Yosys synthesis script for ${TOP_MODULE}
+
+#########################
+# Parse input files
+#########################
+# Read verilog files
+read_verilog ${READ_VERILOG_OPTIONS} ${VERILOG_FILES}
+# Read technology library
+read_verilog -lib -specify /home/memzfs_projects/vtr3d/LaZagna/task/designs/bram_cell_sim.v
+
+#########################
+# Prepare for synthesis
+#########################
+# Identify top module from hierarchy
+hierarchy -check -top ${TOP_MODULE}
+# - Convert process blocks to AST
+proc
+# Flatten all the gates/primitives
+flatten
+# Identify tri-state buffers from 'z' signal in AST
+# with follow-up optimizations to clean up AST
+tribuf -logic
+opt_expr
+opt_clean
+# demote inout ports to input or output port
+# with follow-up optimizations to clean up AST
+deminout
+opt -nodffe -nosdff
+
+opt_expr
+opt_clean
+check
+opt -nodffe -nosdff
+wreduce -keepdc
+peepopt
+pmuxtree
+opt_clean
+
+########################
+# Map multipliers
+# Inspired from synth_xilinx.cc
+#########################
+# Avoid merging any registers into DSP, reserve memory port registers first
+memory_dff
+wreduce t:$mul
+
+techmap -map +/mul2dsp.v -map /home/memzfs_projects/vtr3d/LaZagna/task/designs/dsp_map.v -D DSP_A_MAXWIDTH=27 -D DSP_B_MAXWIDTH=27 -D DSP_A_MINWIDTH=18 -D DSP_B_MINWIDTH=18 -D DSP_NAME=mult_27x27
+
+chtype -map $__soft_mul $mul # Extract arithmetic functions
+wreduce t:$mul
+
+techmap -map +/mul2dsp.v -map /home/memzfs_projects/vtr3d/LaZagna/task/designs/dsp_map.v -D DSP_A_MAXWIDTH=18 -D DSP_B_MAXWIDTH=19 -D DSP_A_MINWIDTH=2 -D DSP_B_MINWIDTH=2 -D DSP_NAME=mult_18x19
+
+select a:mul2dsp
+setattr -unset mul2dsp
+opt_expr -fine
+wreduce
+select -clear
+chtype -set $mul t:$__soft_mul# Extract arithmetic functions
+
+#########################
+# Run coarse synthesis
+#########################
+techmap
+alumacc
+share
+opt -nodffe -nosdff
+fsm
+# Run a quick follow-up optimization to sweep out unused nets/signals
+opt -fast -nodffe -nosdff
+# Optimize any memory cells by merging share-able ports and collecting all the ports belonging to memorcy cells  
+memory -nomap
+opt_clean
+
+memory_bram -rules /home/memzfs_projects/vtr3d/LaZagna/task/designs/bram.txt
+techmap -map /home/memzfs_projects/vtr3d/LaZagna/task/designs/bram_map.v 
+stat
+opt -fast -mux_undef -undriven -fine -nodffe -nosdff
+memory_map
+opt -undriven -fine -nodffe -nosdff
+
+
+
+#########################
+# Map flip-flops
+#########################
+dfflegalize -cell $_DFF_P_ 0
+techmap -map +/adff2dff.v
+opt_expr -mux_undef
+simplemap
+opt_expr
+opt_merge
+opt_dff -nodffe -nosdff
+opt_clean
+opt -nodffe -nosdff
+stat
+#########################
+# Map LUTs
+#########################
+abc -lut 6
+
+#########################
+# Check and show statisitics
+#########################
+hierarchy -check
+stat
+
+#########################
+# Output netlists
+#########################
+opt_clean -purge
+
+write_blif -param ${OUTPUT_BLIF}
