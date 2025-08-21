@@ -17,7 +17,7 @@ connection_type: ["subset"]
 linked_params:
   type_sb_arch_mapping:
     - type_sb: "3d_cb"
-      arch_file: "/path/to/arch_files/templates/dsp_bram_hetero/vtr_3d_cb_arch_dsp_bram_hetero.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram_hetero/vtr_3d_cb_arch_dsp_bram_hetero.xml"
 
 
 
@@ -30,7 +30,7 @@ cur_loop_identifier: "vertical_delay_ratio_test"
 
 is_verilog_benchmarks: True
 
-benchmarks_dir: "/path/to/benchmarks/ITD_quick"
+benchmarks_dir: "{lazagna_root}/benchmarks/ITD_quick"
 
 vertical_connectivity: 1
 

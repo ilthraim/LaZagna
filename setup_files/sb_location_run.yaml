@@ -10,14 +10,14 @@ channel_width: 300
 
 percent_connectivity: [0.5]
 
-place_algorithm: ["cube_bb"]
+place_algorithm: ["cube_bb", "per_layer_bb"]
 
 connection_type: ["subset"]
 
 linked_params:
   type_sb_arch_mapping:
     - type_sb: "combined"
-      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_arch_dsp_bram.xml"
 
 
 num_seeds: 1
@@ -32,7 +32,7 @@ cur_loop_identifier: "random_run"
 
 is_verilog_benchmarks: True
 
-benchmarks_dir: "/path/to/benchmarks/ITD_quick"
+benchmarks_dir: "{lazagna_root}/benchmarks/ITD_quick"
 
 vertical_connectivity: 1 
 
@@ -46,9 +46,9 @@ sb_output_pattern: []
 
 sb_location_pattern: ["custom"]
 
-sb_grid_csv_path: ["/path/to/csv_output/random_pattern.csv"]
+sb_grid_csv_path: ["{lazagna_root}/csv_patterns/rows_pattern.csv", "{lazagna_root}/csv_patterns/columns_pattern.csv", "{lazagna_root}/csv_patterns/core_pattern.csv", "{lazagna_root}/csv_patterns/perimeter_pattern.csv", "{lazagna_root}/csv_patterns/checkerboard_pattern.csv", "{lazagna_root}/csv_patterns/random_pattern.csv"]
 
-vertical_delay_ratio: [1]
+vertical_delay_ratio: [0.739]
 
 base_delay_switch: "L4_driver"
 

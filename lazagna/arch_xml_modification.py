@@ -112,7 +112,7 @@ def update_vertical_delay_ratio(root, vertical_delay_ratio, sb_3d_switch_name="3
     #                 Horizontal Routing Channel on layer X -> None node at layer X -> None node at layer X+1 -> Vertical Routing Channel on layer X+1
 
     # Notice the 3 switches in series, the first one is the horizontal routing channel on layer X, the second one is the None node at layer X, and the third one is the None node at layer X+1.
-    new_delay = interlayer_delay / 3
+    new_delay = interlayer_delay / 2
 
     sb_switch.set('Tdel', str(new_delay))
 

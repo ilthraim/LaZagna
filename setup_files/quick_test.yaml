@@ -17,7 +17,9 @@ connection_type: ["subset"]
 linked_params:
   type_sb_arch_mapping:
     - type_sb: "hybrid_cb"
-      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+    - type_sb: "2d"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
 
 num_seeds: 1
 
@@ -31,7 +33,7 @@ cur_loop_identifier: "hybrid_rtl_test"
 
 is_verilog_benchmarks: False
 
-benchmarks_dir: "/path/to/benchmarks/MCNC_benchmarks"
+benchmarks_dir: "{lazagna_root}/benchmarks/MCNC_benchmarks"
 
 vertical_connectivity: 1 
 

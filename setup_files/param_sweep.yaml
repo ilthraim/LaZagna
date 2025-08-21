@@ -19,13 +19,13 @@ connection_type: ["wilton_2", "subset"]
 linked_params:
   type_sb_arch_mapping:
     - type_sb: "2d"
-      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_2d_arch_dsp_bram.xml"
     - type_sb: "3d_cb"
-      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_3d_cb_arch_dsp_bram.xml"
     - type_sb: "3d_cb_out_only"
-      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_3d_cb_out_only_arch_dsp_bram.xml"
     - type_sb: "combined"
-      arch_file: "/path/to/arch_files/templates/dsp_bram/vtr_dsp_bram.xml"
+      arch_file: "{lazagna_root}/arch_files/templates/dsp_bram/vtr_dsp_bram.xml"
 
 num_seeds: 1
 
@@ -35,7 +35,7 @@ cur_loop_identifier: "yaml_testing"
 
 is_verilog_benchmarks: False
 
-benchmarks_dir: "/path/to/benchmarks/MCNC_benchmarks"
+benchmarks_dir: "{lazagna_root}/benchmarks/MCNC_benchmarks"
 
 vertical_connectivity: 1
 

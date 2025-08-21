@@ -4,6 +4,10 @@ import copy
 from typing import Dict, List, Any
 import random
 import os
+import re
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LAZAGNA_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 
 def generate_seed_mapping(num_seeds: int) -> List[Dict]:
     """Generate seed and run number mapping"""
@@ -103,6 +107,10 @@ def generate_param_combinations(param_ranges: Dict) -> List[Dict]:
     # Convert linked parameter groups into lists of dictionaries
     linked_param_groups = []
     for param_group, mappings in linked_params.items():
+        for item in mappings:
+            for key, value in item.items():
+                if key == 'arch_file':
+                    item[key] = value.replace('{lazagna_root}', LAZAGNA_ROOT)
         linked_param_groups.append(mappings)
 
     # Generate combinations of linked parameter groups
@@ -213,6 +221,8 @@ def get_run_params_from_yaml(file_path, verbose=False):
         if key not in expected_params:
             print(f"Warning: Unexpected parameter '{key}' found in the YAML file.")
 
+    if 'benchmarks_dir' in params:
+        params['benchmarks_dir'] = params['benchmarks_dir'].replace('{lazagna_root}', LAZAGNA_ROOT)
 
     # Generate all combinations
     combinations = generate_param_combinations(params)
@@ -256,7 +266,9 @@ def get_run_params_from_yaml(file_path, verbose=False):
     return cleaned_combinations
 
 if __name__ == "__main__":
-    # Example usage
-    yaml_file = "/home/Ismael/3DFADE/setup_files/sb_location_run.yaml"
+    # # Example usage
+    yaml_file = "/home/memzfs_projects/vtr3d/LaZagna/setup_files/quick_test.yaml"
     combinations = get_run_params_from_yaml(yaml_file, verbose=True)
     print(f"Generated {len(combinations)} parameter combinations.")
+    print("script dir: ", SCRIPT_DIR)
+    print("lazagna root: ", LAZAGNA_ROOT)
