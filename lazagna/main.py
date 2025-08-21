@@ -16,7 +16,8 @@ parser = argparse.ArgumentParser(description="Run 3DFADE tests in parallel using
 
 parser.add_argument("-f", "--yaml_file", type=str, required=True, help="Path to the yaml file containing the test parameters.")
 parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output.")
-parser.add_argument("-j", "--num_workers", type=int, default=4, help="Number of parallel workers to use. Default is 4.")
+parser.add_argument("-j", "--num_workers", type=int, default=1, help="Number of parallel workers to use. Default is 1. Total number of cores = <num_workers> * <num_task_workers>")
+parser.add_argument("-n", "--num_task_workers", type=int, default=1, help="Number of parallel workers to use per task. Default is 1. Total number of cores = <num_workers> * <num_task_workers>")
 # the directory of this file
 original_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -27,6 +28,7 @@ def run_job(param):
     
     param_copy = param.copy()
     param_copy['original_dir'] = original_dir
+    param_copy['num_task_workers'] = param.get('num_task_workers', 1)
     return run_interface(params=param_copy)
 
 def setup_benchmark_files(run_params):

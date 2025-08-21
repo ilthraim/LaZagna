@@ -181,7 +181,7 @@ def run_interface(params):
         'sb_switch_name', 'sb_segment_name', 'sb_input_pattern',
         'sb_output_pattern', 'sb_location_pattern', 'sb_grid_csv_path',
         'vertical_delay_ratio', 'base_delay_switch', 'switch_interlayer_pairs',
-        'update_arch_delay'
+        'update_arch_delay', 'num_task_workers'
     ]
     # Check if all expected parameters are present
     
@@ -227,6 +227,8 @@ def run_interface(params):
 
         output_identifier = params['cur_loop_identifier']
 
+        print_verbose(f"Task run folder created: {task_run_folder}")
+
         if params['connection_type'] == 'custom':
             output_identifier = params['cur_loop_identifier'] + "_custom"
             output_identifier += "_input_" + str(params['sb_input_pattern']).replace("_","")
@@ -239,8 +241,11 @@ def run_interface(params):
         if params['sb_location_pattern'] == "random":
             output_identifier += "_location_" + str(params['sb_location_pattern']).replace("_","")
 
-        # Parallelized
-        with ThreadPoolExecutor() as executor:
+        
+
+        # Parallelized up to n workers
+        max_workers = params['num_task_workers']
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i in range(len(params['blif_files'])):
                 futures.append(
