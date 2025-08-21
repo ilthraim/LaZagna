@@ -4,7 +4,7 @@
 MAKEFLAGS =
 
 # Default target, run all tasks
-all: prereqs init build
+all: init build
 
 prereqs:
 	./install_apt_packages.sh
