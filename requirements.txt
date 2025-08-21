@@ -1,14 +1,14 @@
 # For LaZagna
-lxml==5.3.0
-numpy==1.22.0
-Pillow==11.2.1
-psutil==6.0.0
-PyYAML==6.0.2
+lxml
+numpy
+Pillow
+psutil
+PyYAML
 
 # For OpenFPGA
-envyaml==1.0.201125
-humanize==3.1.0
-coloredlogs==9.1
+envyaml
+humanize
+coloredlogs
 pyverilog
 
 # Python linter and formatter

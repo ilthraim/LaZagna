@@ -1,3 +1,5 @@
+# Based on VTR's `install_apt_packages.sh`
+
 sudo apt-get update
 
 # Base packages to compile and run basic regression tests
