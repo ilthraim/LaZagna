@@ -6,7 +6,7 @@ width_2d: 15
 
 height_2d: 15
 
-channel_width: 20
+channel_width: 50
 
 percent_connectivity: [1]
 
