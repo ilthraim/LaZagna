@@ -170,6 +170,24 @@
       </sub_tile>
     </tile>
 
+    <tile name="3d_clb" area="53894">
+      <sub_tile name="3d_clb">
+        <equivalent_sites>
+          <site pb_type="3d_clb"/>
+        </equivalent_sites>
+        <input name="I" num_pins="40" equivalent="full"/>
+        <output name="O" num_pins="10" equivalent="none"/>
+        <clock name="clk" num_pins="1"/>
+        <fc in_type="frac" in_val="0.15" out_type="frac" out_val="0.10"/>
+        <pinlocations pattern="custom">
+          <loc side="left" layer_offset="1">clb.clk clb.O[0:2] clb.I[0:9]</loc>
+          <loc side="top" layer_offset="1">clb.O[3:5] clb.I[10:19]</loc>
+          <loc side="right" layer_offset="1">clb.O[6:7] clb.I[20:29]</loc>
+          <loc side="bottom" layer_offset="1">clb.O[8:9] clb.I[30:39]</loc>
+        </pinlocations>
+      </sub_tile>
+    </tile>
+
     <tile name="clb" area="53894">
       <sub_tile name="clb">
         <equivalent_sites>
@@ -508,6 +526,108 @@
       </interconnect>
       <!-- Every input pin is driven by 15% of the tracks in a channel, every output pin is driven by 10% of the tracks in a channel -->
       <!-- Place this general purpose logic block in any unspecified column -->
+    </pb_type>
+    <!-- Define general purpose logic block (CLB) ends -->
+
+    <pb_type name="3d_clb">
+      <input name="I" num_pins="40" equivalent="full"/>
+      <output name="O" num_pins="10" equivalent="none"/>
+      <internal name="interlayer" num_pins="10" equivalent="full"/>
+      <clock name="clk" num_pins="1"/>
+      <!-- Describe basic logic element.  
+             Each basic logic element has a 6-LUT that can be optionally registered
+        -->
+      <layer num="0">
+        <pb_type name="fle" num_pb="10"> 
+          <input name="in" num_pins="6"/>
+          <output name="out" num_pins="1"/>
+          <clock name="clk" num_pins="1"/>
+          <!-- 6-LUT mode definition begin -->
+          <mode name="n1_lut6">
+            <!-- Define 6-LUT mode -->
+            <pb_type name="ble6" num_pb="1">
+              <input name="in" num_pins="6"/>
+              <output name="out" num_pins="1"/>
+              <clock name="clk" num_pins="1"/>
+              <!-- Define LUT -->
+              <pb_type name="lut6" blif_model=".names" num_pb="1" class="lut">
+                <input name="in" num_pins="6" port_class="lut_in"/>
+                <output name="out" num_pins="1" port_class="lut_out"/>
+                <!-- LUT timing using delay matrix -->
+                <!-- These are the physical delay inputs on a Stratix IV LUT but because VPR cannot do LUT rebalancing,
+                        we instead take the average of these numbers to get more stable results
+                    82e-12
+                    173e-12
+                    261e-12
+                    263e-12
+                    398e-12
+                    397e-12
+                    -->
+                <delay_matrix type="max" in_port="lut6.in" out_port="lut6.out">
+                  261e-12
+                  261e-12
+                  261e-12
+                  261e-12
+                  261e-12
+                  261e-12
+                </delay_matrix>
+              </pb_type>
+              <!-- Define flip-flop -->
+              <pb_type name="ff" blif_model=".latch" num_pb="1" class="flipflop">
+                <input name="D" num_pins="1" port_class="D"/>
+                <output name="Q" num_pins="1" port_class="Q"/>
+                <clock name="clk" num_pins="1" port_class="clock"/>
+                <T_setup value="80.2421e-12" port="ff.D" clock="clk"/>
+                <T_clock_to_Q max="150.7579e-12" port="ff.Q" clock="clk"/>
+              </pb_type>
+              <interconnect>
+                <direct name="direct1" input="ble6.in" output="lut6[0:0].in"/>
+                <direct name="direct2" input="lut6.out" output="ff.D">
+                  <!-- Advanced user option that tells CAD tool to find LUT+FF pairs in netlist -->
+                  <pack_pattern name="ble6" in_port="lut6.out" out_port="ff.D"/>
+                </direct>
+                <direct name="direct3" input="ble6.clk" output="ff.clk"/>
+                <mux name="mux1" input="ff.Q lut6.out" output="ble6.out">
+                  <!-- LUT to output is faster than FF to output on a Stratix IV -->
+                  <delay_constant max="25e-12" in_port="lut6.out" out_port="ble6.out"/>
+                  <delay_constant max="45e-12" in_port="ff.Q" out_port="ble6.out"/>
+                </mux>
+              </interconnect>
+            </pb_type>
+            <interconnect>
+              <direct name="direct1" input="fle.in" output="ble6.in"/>
+              <direct name="direct2" input="ble6.out" output="fle.out[0:0]"/>
+              <direct name="direct3" input="fle.clk" output="ble6.clk"/>
+            </interconnect>
+          </mode>
+          <!-- 6-LUT mode definition end -->
+        </pb_type>
+        <interconnect>
+          <!-- We use a full crossbar to get logical equivalence at inputs of CLB 
+          The delays below come from Stratix IV. the delay through a connection block
+          input mux + the crossbar in Stratix IV is 167 ps. We already have a 72 ps 
+          delay on the connection block input mux (modeled by Ian Kuon), so the remaining
+          delay within the crossbar is 95 ps. 
+          The delays of cluster feedbacks in Stratix IV is 100 ps, when driven by a LUT.
+          Since all our outputs LUT outputs go to a BLE output, and have a delay of 
+          25 ps to do so, we subtract 25 ps from the 100 ps delay of a feedback
+          to get the part that should be marked on the crossbar.	 -->
+          <complete name="crossbar" input="clb.I fle[9:0].out" output="fle[9:0].in">
+            <delay_constant max="95e-12" in_port="clb.I" out_port="fle[9:0].in"/>
+            <delay_constant max="75e-12" in_port="fle[9:0].out" out_port="fle[9:0].in"/>
+          </complete>
+          <complete name="clks" input="clb.clk" output="fle[9:0].clk">
+          </complete>
+          <!-- This way of specifying direct connection to clb outpus is important because this architecture uses automatic spreading of opins.  
+                By grouping to output pins in this fashion, if a logic block is completely filled by 6-LUTs, 
+                then the outputs those 6-LUTs take get evenly distributed across all four sides of the CLB instead of clumped on two sides (which is what happens with a more
+                naive specification).
+            -->
+          <direct name="clbouts1" input="fle[9:0].out" output="clb.O"/>
+        </interconnect>
+        <!-- Every input pin is driven by 15% of the tracks in a channel, every output pin is driven by 10% of the tracks in a channel -->
+        <!-- Place this general purpose logic block in any unspecified column -->
+      </layer>
     </pb_type>
     <!-- Define general purpose logic block (CLB) ends -->
 
