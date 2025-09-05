@@ -124,6 +124,23 @@ class Arch(_Node):
             raise ValueError("out_type must be frac or abs")
         ET.SubElement(self._device, "default_fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val": out_val})
 
+    #lz TODO verify there cannot be auto layout and fixed layout
+    def auto_layout(self, aspect_ratio: Optional[str] = None):
+        if self._layout.find("auto_layout") != None:
+            raise ValueError("Cannot have multiple auto layouts defined")
+        if self._layout.find("fixed_layout") != None:
+            raise ValueError("Cannot have fixed and auto layouts")
+        
+        if(aspect_ratio != None):
+            ET.SubElement(self._layout, "auto_layout", {"aspect_ratio": aspect_ratio})
+        else:
+            ET.SubElement(self._layout, "auto_layout")
+
+    def fixed_layout(self, name: str, width: str, height: str):
+        if self._layout.find("auto_layout") != None:
+            raise ValueError("Cannot have auto and fixed layouts")
+        
+        ET.SubElement(self._layout, "fixed_layout", {"name": name, "width": width, "height": height})
 
 class Model(_Node):
     def __init__(self, name: str, prune: str = "false"):
@@ -234,7 +251,6 @@ class Switch(_Node):
 
 class Segment(_Node):
     def __init__(self,
-                 arch: Arch,
                  name: str,
                  length: str,
                  freq: str,
@@ -261,6 +277,8 @@ class Segment(_Node):
         if res_type != None:
             elems["res_type"] = res_type
 
+        self.mux_type = None
+        self.type = type
         self.root = ET.Element("segment", elems)
         self.arch = arch
 
@@ -284,12 +302,50 @@ class Segment(_Node):
         
         ET.SubElement(self.root, "cb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
 
-    def mux(self, name: str):
-        if (not name in arch.switches) or (arch.switches[name].type != "mux"):
-            raise ValueError("Mux must be defined in the switchlist before use in segmentlist")
-        
-        ET.SubElement(self.root, "mux", {"name": name})
+    def mux(self, switch: Switch):
+        if type != "unidir":
+            raise ValueError("Mux can only be defined for segments of type unidir")
+        if switch.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        if self.root.find("mux_inc") != None:
+            raise ValueError("Mux cannot be defined alonside mux_inc/dec tag")
 
+        ET.SubElement(self.root, "mux", {"name": switch.name})
+
+    def mux_inc_dec(self, switch_inc: Switch, switch_dec: Switch):
+        if type != "unidir":
+            raise ValueError("Mux can only be defined for segments of type unidir")
+        if switch_inc.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        if switch_dec.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        if self.root.find("mux") != None:
+            raise ValueError("Inc/Dec mux cannot be defined alonside mux tag")
+        
+        ET.SubElement(self.root, "mux_inc", {"name": switch_inc.name})
+        ET.SubElement(self.root, "mux_dec", {"name": switch_dec.name})
+
+    def mux_inter_die(self, switch: Switch):
+        if switch.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        
+        ET.SubElement(self.root, "mux_inter_die", {"name": switch.name})
+
+    def wire_switch(self, switch: Switch):
+        if type != "bidir":
+            raise ValueError("Wire_switch can only be defined for segments of type bidir")
+        if not switch.type in ["tristate", "pass_gate"]:
+            raise ValueError("Provided switch must be of type tristate or pass_gate")
+        
+        ET.SubElement(self.root, "wire_switch", {"name": switch.name})
+
+    def opin_switch(self, switch: Switch):
+        if type != "bidir":
+            raise ValueError("Opin_switch can only be defined for segments of type bidir")
+        if not switch.type in ["tristate", "pass_gate"]:
+            raise ValueError("Provided switch must be of type tristate or pass_gate")
+        
+        ET.SubElement(self.root, "opin_switch", {"name": switch.name})
 
 ############################################
 
@@ -335,10 +391,10 @@ arch.add_switch(switch1)
 #lz TODO should creating segments be a function of the specific architecture?
 #lz TODO could do mux checking in arch.add_segment()
 
-l4Segment = Segment(arch=arch, name="L4", freq="280", length="4", type="unidir", Rmetal="0.0", Cmetal="0.0")
+l4Segment = Segment(name="L4", freq="280", length="4", type="unidir", Rmetal="0.0", Cmetal="0.0")
 l4Segment.switch_block_pattern([1, 1, 1, 1, 1])
 l4Segment.connection_block_pattern([1, 1, 1, 1])
-l4Segment.mux(name="L4_driver")
+l4Segment.mux(switch1)
 
 arch.add_segment(l4Segment)
 
