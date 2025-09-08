@@ -1,5 +1,6 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
+import networkx as nx
 from xml.dom import minidom
 from typing import Optional, Iterable, Dict, Any, List
 
@@ -23,6 +24,7 @@ class Arch(_Node):
         self._complexblocklist = ET.SubElement(self.root, "complexblocklist")
 
         self.switches: dict[str, Switch] = {}
+        self.segments: dict[str, Segment] = {}
 
     def add_model(self, model: Model):
         #ET.append(self._models, model.to_elem())
@@ -35,7 +37,18 @@ class Arch(_Node):
         self.switches[switch.name] = switch
         self._switchlist.append(switch.to_elem())
 
+    #lz TODO do checking for bidirectional switches
     def add_segment(self, segment: Segment):
+        if segment.switch_mux != None and self.switches[segment.switch_mux.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+        if segment.switch_mux_inc != None and self.switches[segment.switch_mux_inc.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+        if segment.switch_mux_dec != None and self.switches[segment.switch_mux_dec.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+        if segment.switch_mux_inter_die != None and self.switches[segment.switch_mux_inter_die.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+
+        self.segments[segment.name] = segment
         self._segmentlist.append(segment.to_elem())
 
     def to_string(self, indent: str = "  ") -> str:
@@ -144,29 +157,38 @@ class Arch(_Node):
 
 class Model(_Node):
     def __init__(self, name: str, prune: str = "false"):
+        self.name = name
         self.root = ET.Element("model", {"name": name, "never_prune": prune})
+        self.inputs: Dict[str, int] = {}
+        self.outputs: Dict[str, int] = {}
+        self.clocks: Dict[str, int] = {}
         self._inputs = ET.SubElement(self.root, "input_ports")
         self._outputs = ET.SubElement(self.root, "output_ports")
 
-    #THERE HAS TO BE A BETTER WAY
-
-    def add_input_port(self, name: str, is_clock: str = "0", clock: Optional[str] = None, comb_ports: Optional[tuple] = None):
-        elems = {"name": name, "is_clock": is_clock}
+    def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None, comb_ports: Optional[tuple] = None):
+        elems = {"name": name, "is_clock": "1" if is_clock else "0"}
         if clock != None:
             elems["clock"] = clock
         if comb_ports != None:
             elems["combinational_sink_ports"] = " ".join(comb_ports)
+
+        if is_clock:
+            self.clocks[name] = num_ports
+        else:
+            self.inputs[name] = num_ports
 
         ET.SubElement(self._inputs, "port", elems)
 
-    def add_output_port(self, name: str, is_clock: str = "0", clock: Optional[str] = None, comb_ports: Optional[tuple] = None):
-        elems = {"name": name, "is_clock": is_clock}
+    def add_output_ports(self, name: str, num_ports: int = 1, clock: Optional[str] = None):
+        elems = {"name": name}
         if clock != None:
             elems["clock"] = clock
-        if comb_ports != None:
-            elems["combinational_sink_ports"] = " ".join(comb_ports)
+
+        self.outputs[name] = num_ports
 
         ET.SubElement(self._outputs, "port", elems)
+
+
     
 class Tile(_Node):
     def __init__(self, name: str, width: str = "1", height: str = "1", area: Optional[str] = None):
@@ -277,9 +299,13 @@ class Segment(_Node):
         if res_type != None:
             elems["res_type"] = res_type
 
-        self.mux_type = None
+        self.name = name
         self.type = type
         self.root = ET.Element("segment", elems)
+        self.switch_mux: Switch
+        self.switch_mux_inc: Switch
+        self.switch_mux_dec: Switch
+        self.switch_mux_inter_die: Switch
         self.arch = arch
 
     def switch_block_pattern(self, pattern: List[int]):
@@ -303,17 +329,18 @@ class Segment(_Node):
         ET.SubElement(self.root, "cb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
 
     def mux(self, switch: Switch):
-        if type != "unidir":
+        if self.type != "unidir":
             raise ValueError("Mux can only be defined for segments of type unidir")
         if switch.type != "mux":
             raise ValueError("Provided switch must be of type mux")
         if self.root.find("mux_inc") != None:
             raise ValueError("Mux cannot be defined alonside mux_inc/dec tag")
 
+        self.switch_mux = switch
         ET.SubElement(self.root, "mux", {"name": switch.name})
 
     def mux_inc_dec(self, switch_inc: Switch, switch_dec: Switch):
-        if type != "unidir":
+        if self.type != "unidir":
             raise ValueError("Mux can only be defined for segments of type unidir")
         if switch_inc.type != "mux":
             raise ValueError("Provided switch must be of type mux")
@@ -322,17 +349,22 @@ class Segment(_Node):
         if self.root.find("mux") != None:
             raise ValueError("Inc/Dec mux cannot be defined alonside mux tag")
         
+        self.switch_mux_inc = switch_inc
+        self.switch_mux_dec = switch_dec
         ET.SubElement(self.root, "mux_inc", {"name": switch_inc.name})
         ET.SubElement(self.root, "mux_dec", {"name": switch_dec.name})
 
     def mux_inter_die(self, switch: Switch):
+        if self.type != "unidir":
+            raise ValueError("Mux can only be defined for segments of type unidir")
         if switch.type != "mux":
             raise ValueError("Provided switch must be of type mux")
         
+        self.switch_mux_inter_die = switch
         ET.SubElement(self.root, "mux_inter_die", {"name": switch.name})
 
     def wire_switch(self, switch: Switch):
-        if type != "bidir":
+        if self.type != "bidir":
             raise ValueError("Wire_switch can only be defined for segments of type bidir")
         if not switch.type in ["tristate", "pass_gate"]:
             raise ValueError("Provided switch must be of type tristate or pass_gate")
@@ -340,12 +372,118 @@ class Segment(_Node):
         ET.SubElement(self.root, "wire_switch", {"name": switch.name})
 
     def opin_switch(self, switch: Switch):
-        if type != "bidir":
+        if self.type != "bidir":
             raise ValueError("Opin_switch can only be defined for segments of type bidir")
         if not switch.type in ["tristate", "pass_gate"]:
             raise ValueError("Provided switch must be of type tristate or pass_gate")
         
         ET.SubElement(self.root, "opin_switch", {"name": switch.name})
+
+class ComplexBlock(_Node):
+    pass
+
+class Primitive(_Node):
+    #options for primitive model are input, output, lut4-6, ff, memory, or custom
+    def __init__(self,
+                 name: str,
+                 type: "str",
+                 blif_model: Optional[Model] = None,
+                 num_pb: Optional[int] = 1,
+                 ):
+        if (type not in ["input", "output", "lut4", "lut5", "lut6", "ff", "memory", "custom"]):
+            raise ValueError("type must be input, output, lut4-6, ff, memory, or custom")
+
+        self.elems = {}
+
+        self.name = name
+        self.elems["name"] = name
+        self.num_pb = num_pb
+        self.elems["num_pb"] = str(num_pb)
+        self.type = type
+
+        self.root = ET.Element("pb_type")
+
+        match type:
+            case "input":
+                self._input()
+            case "output":
+                self._output()
+            case "lut4":
+                self._lut(4)
+            case "lut5":
+                self._lut(5)
+            case "lut6":
+                self._lut(6)
+            case "ff":
+                self._ff()
+            case "memory":
+                if (blif_model == None):
+                    raise ValueError("If model is type memory, then blif_model parameter must be provided")
+                self._memory(blif_model)
+            case "custom":
+                if (blif_model == None):
+                    raise ValueError("If model is type custom, then blif_model parameter must be provided")
+                self._custom(blif_model)
+
+        self.root.attrib.update(self.elems)
+
+    def _input(self):
+        self.elems["blif_model"] = ".input"
+
+        self._add_input("in", 1)
+
+    def _output(self):
+        self.elems["blif_model"] = ".output"
+
+        self._add_output("out", 1)
+
+    def _lut(self, num_pins: int):
+        self.elems["blif_model"] = ".names"
+        self.elems["class"] = "lut"
+
+        self._add_input("in", num_pins, "lut_in")
+        self._add_output("out", 1, "lut_out")
+
+    def _ff(self):
+        self.elems["blif_model"] = ".latch"
+        self.elems["class"] = "flipflop"
+
+        self._add_input("D", 1, "D")
+        self._add_output("Q", 1, "Q")
+        self._add_clock("clock", 1, "clock")
+
+    #lz TODO memory
+    def _memory(self, blif_model: Model):
+        self.elems["blif_model"] = ".subckt " + blif_model.name
+        self.elems["class"] = "memory"
+
+    def _custom(self, blif_model: Model):
+        self.elems["blif_model"] = ".subckt " + blif_model.name
+
+        for port_name, value in blif_model.inputs.items():
+            self._add_input(name=port_name, num_pins=value)
+        for port_name, value in blif_model.outputs.items():
+            self._add_output(name=port_name, num_pins=value)
+        for port_name, value in blif_model.clocks.items():
+            self._add_clock(name=port_name, num_pins=value)
+
+    def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        if port_class != None:
+            ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
+        else:
+            ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
+
+    def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        if port_class != None:
+            ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
+        else:
+            ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
+
+    def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        if port_class != None:
+            ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
+        else:
+            ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
 
 ############################################
 
@@ -355,8 +493,8 @@ arch = Arch()
 ############ MODELS ###################
 
 ioModel = Model("io")
-ioModel.add_input_port(name="we", clock="0")
-ioModel.add_output_port(name="addr", is_clock="1", clock=None, comb_ports=("test", "test2"))
+ioModel.add_input_ports(name="we", is_clock=False)
+ioModel.add_output_ports(name="addr", clock=None)
 
 arch.add_model(ioModel)
 
@@ -387,9 +525,6 @@ switch1 = Switch(type="mux", name="L4_driver", R="0.0", Cin="0.0", Cout="0.0", T
 arch.add_switch(switch1)
 
 ############ SEGMENT #################
-
-#lz TODO should creating segments be a function of the specific architecture?
-#lz TODO could do mux checking in arch.add_segment()
 
 l4Segment = Segment(name="L4", freq="280", length="4", type="unidir", Rmetal="0.0", Cmetal="0.0")
 l4Segment.switch_block_pattern([1, 1, 1, 1, 1])
