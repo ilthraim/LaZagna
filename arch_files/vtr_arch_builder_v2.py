@@ -1,6 +1,8 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
 import networkx as nx
+import matplotlib.pyplot as plt
+import re
 from xml.dom import minidom
 from typing import Optional, Iterable, Dict, Any, List
 
@@ -11,6 +13,17 @@ class _Node:
     def to_elem(self) -> ET.Element:
         return self.root
 
+class _GraphIO:
+    def __init__(self, name: str, type: str, index: int, base_block: ComplexBlock | Primitive):
+        self.name = name
+        self.index = index
+        self.type = type
+        self.base_block = base_block
+
+class _GraphBlock:
+    def __init__(self, name: str, base_block: ComplexBlock | Primitive):
+        self.name = name
+        self.base_block = base_block
 
 class Arch(_Node):
     def __init__(self):
@@ -39,17 +52,20 @@ class Arch(_Node):
 
     #lz TODO do checking for bidirectional switches
     def add_segment(self, segment: Segment):
-        if segment.switch_mux != None and self.switches[segment.switch_mux.name] == None:
+        if hasattr(segment, "switch_mux") and self.switches[segment.switch_mux.name] == None:
             raise ValueError("Mux used in segment must be present in switchlist")
-        if segment.switch_mux_inc != None and self.switches[segment.switch_mux_inc.name] == None:
+        if hasattr(segment, "switch_mux_inc") and self.switches[segment.switch_mux_inc.name] == None:
             raise ValueError("Mux used in segment must be present in switchlist")
-        if segment.switch_mux_dec != None and self.switches[segment.switch_mux_dec.name] == None:
+        if hasattr(segment, "switch_mux_dec") and self.switches[segment.switch_mux_dec.name] == None:
             raise ValueError("Mux used in segment must be present in switchlist")
-        if segment.switch_mux_inter_die != None and self.switches[segment.switch_mux_inter_die.name] == None:
+        if hasattr(segment, "switch_mux_inter_die") and self.switches[segment.switch_mux_inter_die.name] == None:
             raise ValueError("Mux used in segment must be present in switchlist")
 
         self.segments[segment.name] = segment
         self._segmentlist.append(segment.to_elem())
+
+    def add_pb(self, pb: ComplexBlock):
+        self._complexblocklist.append(pb.to_elem())
 
     def to_string(self, indent: str = "  ") -> str:
         rough = ET.tostring(self.root, encoding="utf-8")
@@ -380,7 +396,127 @@ class Segment(_Node):
         ET.SubElement(self.root, "opin_switch", {"name": switch.name})
 
 class ComplexBlock(_Node):
-    pass
+    def __init__(self,
+                 name: str,
+                 num_pb: int = 1):
+        self.name = name
+        self.num_pb = num_pb
+        self.contents: Dict[str, ComplexBlock | Primitive] = {}
+        self.inputs: Dict[str, list[str]] = {}
+        self.outputs: Dict[str, list[str]] = {}
+        self.num_dc: int = 0
+        self.num_cc: int = 0
+        self.graph = nx.Graph()
+        
+
+        self.root = ET.Element("pb_type", {"name": name, "num_pb": str(num_pb)})
+        self._interconnect = ET.SubElement(self.root, "interconnect")
+
+    def add_block(self, block: ComplexBlock | Primitive):
+        self.contents[block.name] = block
+
+        self.graph.add_nodes_from(block.graph)
+        self.graph.add_edges_from(block.graph.edges)
+
+        self.root.append(block.to_elem())
+    
+    #lz TODO add equivalent and is_non_clock_global
+    def add_input(self, name:str, num_pins: int):
+        self.inputs[name] = []
+
+        for ii in range(num_pins):
+            node_name = self.name + "." + name + "[" + str(ii) + "]"
+            self.inputs[name].append(node_name)
+            self.graph.add_node(node_name)
+
+        ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
+
+    def add_output(self, name: str, num_pins: int):
+        self.outputs[name] = []
+
+        for ii in range(num_pins):
+            node_name = self.name + "." + name + "[" + str(ii) + "]"
+            self.outputs[name].append(node_name)
+            self.graph.add_node(node_name)
+
+        ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
+
+    def add_clock(self, name: str, num_pins: int):
+        self.inputs[name] = []
+
+        for ii in range(num_pins):
+            node_name = self.name + "." + name + "[" + str(ii) + "]"
+            self.inputs[name].append(node_name)
+            self.graph.add_node(node_name)
+
+        ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
+
+    #lz TODO add cases like x[9:0] -> out
+    #lz TODO add case for interacting with the complex block itself
+    def add_direct_connection(self,
+                              input_block: ComplexBlock | Primitive, 
+                              input_port: str,
+                              input_port_index: int,
+                              output_block: ComplexBlock | Primitive,
+                              output_port: str,
+                              output_port_index: int,
+                              connection_width: int = 1,
+                              name: Optional[str] = None):
+        if name == None:
+            name = "direct" + str(self.num_dc)
+            self.num_dc += 1
+
+        if input_block.name not in self.contents and input_block != self:
+            raise ValueError("Input must be block within pb or a pb io port")
+        if output_block.name not in self.contents and output_block != self:
+            raise ValueError("Output must be block within pb or a pb io port")
+
+        for ii, jj in zip(range(input_port_index, input_port_index + connection_width), range(output_port_index, output_port_index + connection_width)):
+            if input_block == self:
+                input_string = self.inputs[input_port][ii]
+                output_string = output_block.inputs[output_port][jj]
+            elif output_block == self:
+                input_string = input_block.outputs[input_port][ii]
+                output_string = self.outputs[output_port][jj]
+            else:
+                input_string = input_block.outputs[input_port][ii]
+                output_string = output_block.inputs[output_port][jj]
+
+            self.graph.add_edge(input_string, output_string)
+
+        #lz TODO - add to xml
+        # if input_block == self:
+        #         input_string = self.inputs[input_port][input_port_index] + "[" + str(input_port_index + connection_width)
+        #         output_string = output_block.inputs[output_port][output_port_index]
+        #     elif output_block == self:
+        #         input_string = output_block.outputs[output_port][output_port_index]
+        #         output_string = self.outputs[output_port][output_port_index]
+        #     else:
+        #         input_string = input_block.outputs[input_port][input_port_index]
+        #         output_string = output_block.inputs[output_port][output_port_index]
+        # self._interconnect.append("direct", {"name": name, "input": })
+
+    def add_complete_connection(self,
+                                input_block: ComplexBlock | Primitive,
+                                input_port: str,
+                                input_port_index: int,
+                                input_port_width: int,
+                                output_block: ComplexBlock | Primitive,
+                                output_port: str,
+                                output_port_index: int,
+                                output_port_width: int,
+                                name: Optional[str] = None):
+        
+        if name == None:
+            name = "complete" + str(self.num_cc)
+            self.num_cc += 1
+
+        if input_block.name not in self.contents and input_block != self:
+            raise ValueError("Input must be block within pb or a pb io port")
+        if output_block.name not in self.contents and output_block != self:
+            raise ValueError("Output must be block within pb or a pb io port")
+        
+        
 
 class Primitive(_Node):
     #options for primitive model are input, output, lut4-6, ff, memory, or custom
@@ -388,7 +524,7 @@ class Primitive(_Node):
                  name: str,
                  type: "str",
                  blif_model: Optional[Model] = None,
-                 num_pb: Optional[int] = 1,
+                 num_pb: int = 1,
                  ):
         if (type not in ["input", "output", "lut4", "lut5", "lut6", "ff", "memory", "custom"]):
             raise ValueError("type must be input, output, lut4-6, ff, memory, or custom")
@@ -400,6 +536,13 @@ class Primitive(_Node):
         self.num_pb = num_pb
         self.elems["num_pb"] = str(num_pb)
         self.type = type
+
+        self.graph = nx.Graph()
+        self.graph.add_node(self.name)
+
+        #inputs, outputs, clocks are stored by name and number of pins
+        self.inputs: Dict[str, list[str]] = {}
+        self.outputs: Dict[str, list[str]] = {}
 
         self.root = ET.Element("pb_type")
 
@@ -468,22 +611,48 @@ class Primitive(_Node):
             self._add_clock(name=port_name, num_pins=value)
 
     def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        self.inputs[name] = []
+
+        for ii in range(num_pins):
+            node_name = self.name + "." + name + "[" + str(ii) + "]"
+            self.inputs[name].append(node_name)
+            self.graph.add_node(node_name)
+            self.graph.add_edge(self.name, node_name)
+
         if port_class != None:
             ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
 
     def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        self.outputs[name] = []
+
+        for ii in range(num_pins):
+            node_name = self.name + "." + name + "[" + str(ii) + "]"
+            self.outputs[name].append(node_name)
+            self.graph.add_node(node_name)
+            self.graph.add_edge(self.name, node_name)
+
         if port_class != None:
             ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
 
     def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        self.inputs[name] = []
+
+        for ii in range(num_pins):
+            node_name = self.name + "." + name + "[" + str(ii) + "]"
+            self.inputs[name].append(node_name)
+            self.graph.add_node(node_name)
+            self.graph.add_edge(self.name, node_name)
+
         if port_class != None:
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
+
+    
 
 ############################################
 
@@ -532,6 +701,30 @@ l4Segment.connection_block_pattern([1, 1, 1, 1])
 l4Segment.mux(switch1)
 
 arch.add_segment(l4Segment)
+
+########### GRAPH TEST ##############
+
+test_prim = Primitive("test_prim", "lut6")
+test_prim2 = Primitive("test_prim2", "lut4")
+
+test_block = ComplexBlock("test_block")
+test_block.add_input("in1", 6)
+test_block.add_input("in2", 1)
+test_block.add_output("out", 2)
+test_block.add_block(test_prim)
+test_block.add_block(test_prim2)
+
+test_block.add_direct_connection(test_block, "in1", 0, test_prim, "in", 0, 6)
+test_block.add_direct_connection(test_block, "in1", 0, test_prim2, "in", 0, 4)
+test_block.add_direct_connection(test_prim, "out", 0, test_block, "out", 0)
+test_block.add_direct_connection(test_prim2, "out", 0, test_block, "out", 1)
+
+
+
+arch.add_pb(test_block)
+
+nx.draw(test_block.graph, with_labels=True)
+plt.savefig("testgraph.png")
 
 ############ PRINT ###################
 
