@@ -402,8 +402,7 @@ class ComplexBlock(_Node):
         self.name = name
         self.num_pb = num_pb
         self.contents: Dict[str, ComplexBlock | Primitive] = {}
-        self.inputs: Dict[str, list[str]] = {}
-        self.outputs: Dict[str, list[str]] = {}
+        self.pins: Dict[str, _Pin] = {}
         self.num_dc: int = 0
         self.num_cc: int = 0
         self.graph = nx.Graph()
@@ -422,101 +421,85 @@ class ComplexBlock(_Node):
     
     #lz TODO add equivalent and is_non_clock_global
     def add_input(self, name:str, num_pins: int):
-        self.inputs[name] = []
+        self.pins[name] = _Pin(self, name, "input", num_pins)
 
-        for ii in range(num_pins):
-            node_name = self.name + "." + name + "[" + str(ii) + "]"
-            self.inputs[name].append(node_name)
-            self.graph.add_node(node_name)
+        self.graph.add_nodes_from(self.pins[name].get_pins())
 
         ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
 
     def add_output(self, name: str, num_pins: int):
-        self.outputs[name] = []
+        self.pins[name] = _Pin(self, name, "output", num_pins)
 
-        for ii in range(num_pins):
-            node_name = self.name + "." + name + "[" + str(ii) + "]"
-            self.outputs[name].append(node_name)
-            self.graph.add_node(node_name)
+        self.graph.add_nodes_from(self.pins[name].get_pins())
 
         ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
 
     def add_clock(self, name: str, num_pins: int):
-        self.inputs[name] = []
+        self.pins[name] = _Pin(self, name, "clock", num_pins)
 
-        for ii in range(num_pins):
-            node_name = self.name + "." + name + "[" + str(ii) + "]"
-            self.inputs[name].append(node_name)
-            self.graph.add_node(node_name)
+        self.graph.add_nodes_from(self.pins[name].get_pins())
 
         ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
 
     #lz TODO add cases like x[9:0] -> out
     #lz TODO add case for interacting with the complex block itself
     def add_direct_connection(self,
-                              input_block: ComplexBlock | Primitive, 
-                              input_port: str,
-                              input_port_index: int,
-                              output_block: ComplexBlock | Primitive,
-                              output_port: str,
-                              output_port_index: int,
-                              connection_width: int = 1,
+                              input_list: list[str], 
+                              output_list: list[str],
                               name: Optional[str] = None):
         if name == None:
             name = "direct" + str(self.num_dc)
             self.num_dc += 1
 
-        if input_block.name not in self.contents and input_block != self:
-            raise ValueError("Input must be block within pb or a pb io port")
-        if output_block.name not in self.contents and output_block != self:
-            raise ValueError("Output must be block within pb or a pb io port")
+        if len(input_list) != len(output_list):
+            raise ValueError("Direct connections must map 1:1 between inputs and outputs")
+        
+        for input, output in zip(input_list, output_list):
+            self.graph.add_edge(input, output)
 
-        for ii, jj in zip(range(input_port_index, input_port_index + connection_width), range(output_port_index, output_port_index + connection_width)):
-            if input_block == self:
-                input_string = self.inputs[input_port][ii]
-                output_string = output_block.inputs[output_port][jj]
-            elif output_block == self:
-                input_string = input_block.outputs[input_port][ii]
-                output_string = self.outputs[output_port][jj]
-            else:
-                input_string = input_block.outputs[input_port][ii]
-                output_string = output_block.inputs[output_port][jj]
+        elems = {"name": name}
 
-            self.graph.add_edge(input_string, output_string)
+        if len(input_list) == 1:
+            elems["input"] = input_list[0]
+            elems["output"] = output_list[0]
+        else:
+            elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
+            elems["output"] = output_list[0][:-1] + ":" + str(int(output_list[0][-2]) + len(output_list) - 1) + "]"
 
-        #lz TODO - add to xml
-        # if input_block == self:
-        #         input_string = self.inputs[input_port][input_port_index] + "[" + str(input_port_index + connection_width)
-        #         output_string = output_block.inputs[output_port][output_port_index]
-        #     elif output_block == self:
-        #         input_string = output_block.outputs[output_port][output_port_index]
-        #         output_string = self.outputs[output_port][output_port_index]
-        #     else:
-        #         input_string = input_block.outputs[input_port][input_port_index]
-        #         output_string = output_block.inputs[output_port][output_port_index]
-        # self._interconnect.append("direct", {"name": name, "input": })
+        ET.SubElement(self._interconnect, "direct", elems)
 
     def add_complete_connection(self,
-                                input_block: ComplexBlock | Primitive,
-                                input_port: str,
-                                input_port_index: int,
-                                input_port_width: int,
-                                output_block: ComplexBlock | Primitive,
-                                output_port: str,
-                                output_port_index: int,
-                                output_port_width: int,
+                                inputs: list[list[str]],
+                                outputs: list[list[str]],
                                 name: Optional[str] = None):
         
         if name == None:
             name = "complete" + str(self.num_cc)
             self.num_cc += 1
+        
+        self.graph.add_node(name)
+        input_string_list = []
+        output_string_list = []
 
-        if input_block.name not in self.contents and input_block != self:
-            raise ValueError("Input must be block within pb or a pb io port")
-        if output_block.name not in self.contents and output_block != self:
-            raise ValueError("Output must be block within pb or a pb io port")
-        
-        
+        for pin_list in inputs:
+            if len(pin_list) == 1:
+                input_string_list.append(pin_list[0])
+            else:
+                input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
+
+            for pin in pin_list:
+                self.graph.add_edge(name, pin)
+
+        for pin_list in outputs:
+            if len(pin_list) == 1:
+                output_string_list.append(pin_list[0])
+            else:
+                output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
+
+            for pin in pin_list:
+                self.graph.add_edge(name, pin)
+
+        ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(input_string_list), "output": " ".join(output_string_list)})
 
 class Primitive(_Node):
     #options for primitive model are input, output, lut4-6, ff, memory, or custom
@@ -541,8 +524,7 @@ class Primitive(_Node):
         self.graph.add_node(self.name)
 
         #inputs, outputs, clocks are stored by name and number of pins
-        self.inputs: Dict[str, list[str]] = {}
-        self.outputs: Dict[str, list[str]] = {}
+        self.pins: Dict[str, _Pin] = {}
 
         self.root = ET.Element("pb_type")
 
@@ -611,13 +593,11 @@ class Primitive(_Node):
             self._add_clock(name=port_name, num_pins=value)
 
     def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
-        self.inputs[name] = []
+        self.pins[name] = _Pin(self, name, "input", num_pins)
 
-        for ii in range(num_pins):
-            node_name = self.name + "." + name + "[" + str(ii) + "]"
-            self.inputs[name].append(node_name)
-            self.graph.add_node(node_name)
-            self.graph.add_edge(self.name, node_name)
+        for pin in self.pins[name].get_pins():
+            self.graph.add_node(pin)
+            self.graph.add_edge(self.name, pin)
 
         if port_class != None:
             ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
@@ -625,13 +605,11 @@ class Primitive(_Node):
             ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
 
     def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
-        self.outputs[name] = []
+        self.pins[name] = _Pin(self, name, "output", num_pins)
 
-        for ii in range(num_pins):
-            node_name = self.name + "." + name + "[" + str(ii) + "]"
-            self.outputs[name].append(node_name)
-            self.graph.add_node(node_name)
-            self.graph.add_edge(self.name, node_name)
+        for pin in self.pins[name].get_pins():
+            self.graph.add_node(pin)
+            self.graph.add_edge(self.name, pin)
 
         if port_class != None:
             ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
@@ -639,20 +617,44 @@ class Primitive(_Node):
             ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
 
     def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
-        self.inputs[name] = []
+        self.pins[name] = _Pin(self, name, "clock", num_pins)
 
-        for ii in range(num_pins):
-            node_name = self.name + "." + name + "[" + str(ii) + "]"
-            self.inputs[name].append(node_name)
-            self.graph.add_node(node_name)
-            self.graph.add_edge(self.name, node_name)
+        for pin in self.pins[name].get_pins():
+            self.graph.add_node(pin)
+            self.graph.add_edge(self.name, pin)
 
         if port_class != None:
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
 
+
+#lz TODO make the get methods more intuitive
+class _Pin():
+    def __init__(self, parent_block: ComplexBlock | Primitive, name: str, type: str, num_pins: int = 1):
+        self.parent_block = parent_block
+        self.name = name
+        self.type = type
+        self.num_pins = num_pins
+
+    def get_pin(self, index) -> list[str]:
+        return [self.parent_block.name + "." + self.name + "[" + str(index) + "]"]
+
+    def get_pins(self) -> list[str]:
+        return_list = []
+
+        for x in range(0, self.num_pins):
+            return_list.append(self.parent_block.name + "." + self.name + "[" + str(x) + "]")
+
+        return return_list
     
+    def get_pins_range(self, start_index: int, end_index: int):
+        return_list = []
+
+        for x in range(start_index, end_index + 1):
+            return_list.append(self.parent_block.name + "." + self.name + "[" + str(x) + "]")
+
+        return return_list
 
 ############################################
 
@@ -714,12 +716,12 @@ test_block.add_output("out", 2)
 test_block.add_block(test_prim)
 test_block.add_block(test_prim2)
 
-test_block.add_direct_connection(test_block, "in1", 0, test_prim, "in", 0, 6)
-test_block.add_direct_connection(test_block, "in1", 0, test_prim2, "in", 0, 4)
-test_block.add_direct_connection(test_prim, "out", 0, test_block, "out", 0)
-test_block.add_direct_connection(test_prim2, "out", 0, test_block, "out", 1)
+# test_block.add_direct_connection(test_block.pins["in1"].get_pins_range(0, 5), test_prim.pins["in"].get_pins_range(0, 5))
+# test_block.add_direct_connection(test_block.pins["in1"].get_pins_range(0, 3), test_prim2.pins["in"].get_pins_range(0, 3))
+# test_block.add_direct_connection(test_prim.pins["out"].get_pin(0), test_block.pins["out"].get_pin(0))
+# test_block.add_direct_connection(test_prim2.pins["out"].get_pin(0), test_block.pins["out"].get_pin(1))
 
-
+test_block.add_complete_connection([test_block.pins["in1"].get_pins()], [test_prim.pins["in"].get_pins(), test_prim2.pins["in"].get_pins()])
 
 arch.add_pb(test_block)
 
