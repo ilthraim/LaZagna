@@ -1,85 +1,100 @@
-"""
-VTR Architecture Python Builder
---------------------------------
-
-A fluent, high-level Python API for generating Verilog-to-Routing (VTR/VPR)
-architecture XML files.
-
-Highlights
-- Covers major sections: models, tiles, layout, device, switches, segments,
-  complexblocklist (pb_types, modes, interconnect), pinlocations, fc, etc.
-- Fluent chainable builders with sensible defaults.
-- Outputs nicely formatted XML.
-
-Usage (quick taste)
--------------------
-from vtr_arch_builder import Arch
-
-arch = (Arch()
-  .models()
-    .model("io")
-      .input_port("outpad")
-      .output_port("inpad").up()
-    .done()
-  .tiles()
-    .tile("io", area=1)
-      .sub_tile("io", capacity=8)
-        .equivalent_site("io").up().up()
-    .done()
-  .layout().fixed("grid141", width=141, height=141)
-    .perimeter(type="io", priority=100)
-    .corners(type="EMPTY", priority=101)
-    .fill(type="clb", priority=10)
-    .done().done()
-  .device()
-    .sizing(R_minW_nmos=8926, R_minW_pmos=16067)
-    .area(grid_logic_tile_area=0)
-    .switch_block(type="wilton", fs=3)
-    .connection_block(input_switch_name="ipin_cblock")
-    .done()
-  .switches()
-    .switch(name="L4_driver", type="tristate", R=0.0, Cin=0.0, Cout=0.0, Tdel="185e-12")
-    .done()
-)
-
-xml_text = arch.to_string()
-arch.save("generated_arch.xml")
-"""
 from __future__ import annotations
 import xml.etree.ElementTree as ET
+import networkx as nx
+import matplotlib.pyplot as plt
+import re
 from xml.dom import minidom
-from typing import Optional, Iterable, Dict, Any, List
+from typing import Optional, Iterable, Dict, Any, List, Literal
 
-# ------------------------------ helpers ------------------------------
-
-def _attrs(**kwargs) -> Dict[str, str]:
-    return {k: str(v) for k, v in kwargs.items() if v is not None}
-
+#MARK: Base Classes
 class _Node:
-    def __init__(self, elem: ET.Element, parent: Optional["_Node"] = None):
-        self.elem = elem
-        self._parent = parent
+    def __init__(self):
+        self.root = ET.Element("")
 
-    # Fluent traversal
-    def up(self):
-        """Return to parent builder in the chain."""
-        return self._parent or self
+    def to_elem(self) -> ET.Element:
+        return self.root
 
-    # Utilities
-    def _add(self, tag: str, **attrs) -> "_Node":
-        child = ET.SubElement(self.elem, tag, _attrs(**attrs))
-        return _Node(child, self)
+class _GraphIO:
+    def __init__(self, name: str, type: str, index: int, base_block: ComplexBlock | Primitive):
+        self.name = name
+        self.index = index
+        self.type = type
+        self.base_block = base_block
 
-    def text(self, value: str) -> "_Node":
-        self.elem.text = value
-        return self
+class _GraphBlock:
+    def __init__(self, name: str, base_block: ComplexBlock | Primitive):
+        self.name = name
+        self.base_block = base_block
 
-# ------------------------------ root ------------------------------
+class _Pin():
+    def __init__(self, 
+                 parent_block: ComplexBlock | Primitive, 
+                 name: str, 
+                 type: Literal["input", "output", "clock"], 
+                 num_pins: int = 1,
+                 equivalence: Literal["none", "full", "instance"] = "none",
+                 is_non_clock_global: bool = False):
+        if equivalence == "instance" and type != "output":
+            raise ValueError("Equivalence of instance is only valid for output pins")
+        if is_non_clock_global and type != "input":
+            raise ValueError("is_non_clock_global is only valid for input pins")
 
-class Arch:
+        self.parent_block = parent_block
+        self.name = name
+        self.type = type
+        self.equivalence = equivalence
+        self.num_pins = num_pins
+
+        if is_non_clock_global:
+            self.is_non_clock_global = is_non_clock_global
+
+    def get_pin(self, index) -> list[str]:
+        return [self.parent_block.name + "." + self.name + "[" + str(index) + "]"]
+
+    def get_all_pins(self) -> list[str]:
+        return_list = []
+
+        for x in range(0, self.num_pins):
+            return_list.append(self.parent_block.name + "." + self.name + "[" + str(x) + "]")
+
+        return return_list
+    
+    def get_pins_range(self, start_index: int, end_index: int):
+        return_list = []
+
+        for x in range(start_index, end_index + 1):
+            return_list.append(self.parent_block.name + "." + self.name + "[" + str(x) + "]")
+
+        return return_list
+    
+    def get_xml_node(self) -> ET.Element:
+        if self.type == "input":
+            if hasattr(self, "is_non_clock_global"):
+                if self.equivalence == "none":
+                    return ET.Element("input", {"name": self.name, "num_pins": str(self.num_pins), "is_non_clock_global": "true"})
+                else:
+                    return ET.Element("input", {"name": self.name, "num_pins": str(self.num_pins), "equivalent": self.equivalence, "is_non_clock_global": "true"})
+            else:
+                if self.equivalence == "none":
+                    return ET.Element("input", {"name": self.name, "num_pins": str(self.num_pins)})
+                else:
+                    return ET.Element("input", {"name": self.name, "num_pins": str(self.num_pins), "equivalent": self.equivalence})
+        elif self.type == "output":
+            if self.equivalence == "none":
+                return ET.Element("output", {"name": self.name, "num_pins": str(self.num_pins)})
+            else:
+                return ET.Element("output", {"name": self.name, "num_pins": str(self.num_pins), "equivalent": self.equivalence})
+        else: #clock
+            if self.equivalence == "none":
+                return ET.Element("clock", {"name": self.name, "num_pins": str(self.num_pins)})
+            else:
+                return ET.Element("clock", {"name": self.name, "num_pins": str(self.num_pins), "equivalent": self.equivalence})
+
+
+#MARK: Arch
+class Arch(_Node):
     def __init__(self):
         self.root = ET.Element("architecture")
-        # top-level containers (order preserved):
         self._models = ET.SubElement(self.root, "models")
         self._tiles = ET.SubElement(self.root, "tiles")
         self._layout = ET.SubElement(self.root, "layout")
@@ -88,29 +103,37 @@ class Arch:
         self._segmentlist = ET.SubElement(self.root, "segmentlist")
         self._complexblocklist = ET.SubElement(self.root, "complexblocklist")
 
-    # sections
-    def models(self) -> "ModelsBuilder":
-        return ModelsBuilder(_Node(self._models, None), self)
+        self.switches: dict[str, Switch] = {}
+        self.segments: dict[str, Segment] = {}
 
-    def tiles(self) -> "TilesBuilder":
-        return TilesBuilder(_Node(self._tiles, None), self)
+    def add_model(self, model: Model):
+        #ET.append(self._models, model.to_elem())
+        self._models.append(model.to_elem())
 
-    def layout(self) -> "LayoutBuilder":
-        return LayoutBuilder(_Node(self._layout, None), self)
+    def add_tile(self, tile: Tile):
+        self._tiles.append(tile.to_elem())
 
-    def device(self) -> "DeviceBuilder":
-        return DeviceBuilder(_Node(self._device, None), self)
+    def add_switch(self, switch: Switch):
+        self.switches[switch.name] = switch
+        self._switchlist.append(switch.to_elem())
 
-    def switches(self) -> "SwitchListBuilder":
-        return SwitchListBuilder(_Node(self._switchlist, None), self)
+    #lz TODO do checking for bidirectional switches
+    def add_segment(self, segment: Segment):
+        if hasattr(segment, "switch_mux") and self.switches[segment.switch_mux.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+        if hasattr(segment, "switch_mux_inc") and self.switches[segment.switch_mux_inc.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+        if hasattr(segment, "switch_mux_dec") and self.switches[segment.switch_mux_dec.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
+        if hasattr(segment, "switch_mux_inter_die") and self.switches[segment.switch_mux_inter_die.name] == None:
+            raise ValueError("Mux used in segment must be present in switchlist")
 
-    def segments(self) -> "SegmentListBuilder":
-        return SegmentListBuilder(_Node(self._segmentlist, None), self)
+        self.segments[segment.name] = segment
+        self._segmentlist.append(segment.to_elem())
 
-    def complexblocks(self) -> "ComplexBlockListBuilder":
-        return ComplexBlockListBuilder(_Node(self._complexblocklist, None), self)
+    def add_pb(self, pb: ComplexBlock):
+        self._complexblocklist.append(pb.to_elem())
 
-    # export
     def to_string(self, indent: str = "  ") -> str:
         rough = ET.tostring(self.root, encoding="utf-8")
         return minidom.parseString(rough).toprettyxml(indent=indent)
@@ -119,371 +142,676 @@ class Arch:
         with open(filename, "w", encoding="utf-8") as f:
             f.write(self.to_string())
 
-# ------------------------------ models ------------------------------
-
-class ModelsBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-
-    def model(self, name: str) -> "ModelBuilder":
-        return ModelBuilder(self.n._add("model", name=name), self)
-
-    def done(self) -> Arch:
-        return self._arch
-
-class ModelBuilder:
-    def __init__(self, node: _Node, parent: ModelsBuilder):
-        self.n = node
-        self._parent = parent
-        self._inputs = ET.SubElement(self.n.elem, "input_ports")
-        self._outputs = ET.SubElement(self.n.elem, "output_ports")
-
-    def input_port(self, name: str, **attrs) -> "ModelBuilder":
-        ET.SubElement(self._inputs, "port", _attrs(name=name, **attrs))
-        return self
-
-    def output_port(self, name: str, **attrs) -> "ModelBuilder":
-        ET.SubElement(self._outputs, "port", _attrs(name=name, **attrs))
-        return self
-
-    def up(self) -> ModelsBuilder:
-        return self._parent
-
-# ------------------------------ tiles ------------------------------
-
-class TilesBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-
-    def tile(self, name: str, *, area: float = 0, height: Optional[int] = None, width: Optional[int] = None) -> "TileBuilder":
-        return TileBuilder(self.n._add("tile", name=name, area=area, height=height, width=width), self)
-
-    def done(self) -> Arch:
-        return self._arch
-
-class TileBuilder:
-    def __init__(self, node: _Node, parent: TilesBuilder):
-        self.n = node
-        self._parent = parent
-
-    # pin/clock declarations for tile (VPR 9+ style)
-    def input(self, name: str, num_pins: int = 1) -> "TileBuilder":
-        ET.SubElement(self.n.elem, "input", _attrs(name=name, num_pins=num_pins))
-        return self
-
-    def output(self, name: str, num_pins: int = 1) -> "TileBuilder":
-        ET.SubElement(self.n.elem, "output", _attrs(name=name, num_pins=num_pins))
-        return self
-
-    def clock(self, name: str, num_pins: int = 1) -> "TileBuilder":
-        ET.SubElement(self.n.elem, "clock", _attrs(name=name, num_pins=num_pins))
-        return self
-
-    def sub_tile(self, name: str, *, capacity: int = 1, height: Optional[int] = None) -> "SubTileBuilder":
-        st = ET.SubElement(self.n.elem, "sub_tile", _attrs(name=name, capacity=capacity, height=height))
-        return SubTileBuilder(_Node(st, self), self)
-
-    def pinlocations(self, pattern: str, **attrs) -> "TileBuilder":
-        pl = ET.SubElement(self.n.elem, "pinlocations", _attrs(pattern=pattern, **attrs))
-        # The actual pin mapping text may be provided via .text() using the returned wrapper if needed
-        return self
-
-    def fc(self, default_in_type: str, default_in_val: str, default_out_type: str, default_out_val: str) -> "TileBuilder":
-        ET.SubElement(self.n.elem, "fc", _attrs(
-            in_type=default_in_type, in_val=default_in_val,
-            out_type=default_out_type, out_val=default_out_val
-        ))
-        return self
-
-    def fc_override(self, **attrs) -> "TileBuilder":
-        ET.SubElement(self.n.elem, "fc_override", _attrs(**attrs))
-        return self
-
-    def up(self) -> TilesBuilder:
-        return self._parent
-
-class SubTileBuilder:
-    def __init__(self, node: _Node, parent: TileBuilder):
-        self.n = node
-        self._parent = parent
-        self._equiv = ET.SubElement(self.n.elem, "equivalent_sites")
-
-    def equivalent_site(self, pb_type: str) -> "SubTileBuilder":
-        ET.SubElement(self._equiv, "site", _attrs(pb_type=pb_type))
-        return self
-
-    def up(self) -> TileBuilder:
-        return self._parent
-
-# ------------------------------ layout ------------------------------
-
-class LayoutBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-        self._current = None  # type: Optional[_Node]
-
-    def fixed(self, name: str, *, width: int, height: int) -> "FixedLayoutBuilder":
-        return FixedLayoutBuilder(self.n._add("fixed_layout", name=name, width=width, height=height), self)
-
-    def auto(self, name: str, *, aspect_ratio: float = 1.0, **attrs) -> "AutoLayoutBuilder":
-        return AutoLayoutBuilder(self.n._add("auto_layout", name=name, aspect_ratio=aspect_ratio, **attrs), self)
-
-    def done(self) -> Arch:
-        return self._arch
-
-class FixedLayoutBuilder:
-    def __init__(self, node: _Node, parent: LayoutBuilder):
-        self.n = node
-        self._parent = parent
-
-    def perimeter(self, **attrs) -> "FixedLayoutBuilder":
-        ET.SubElement(self.n.elem, "perimeter", _attrs(**attrs))
-        return self
-
-    def corners(self, **attrs) -> "FixedLayoutBuilder":
-        ET.SubElement(self.n.elem, "corners", _attrs(**attrs))
-        return self
-
-    def fill(self, **attrs) -> "FixedLayoutBuilder":
-        ET.SubElement(self.n.elem, "fill", _attrs(**attrs))
-        return self
-
-    def col(self, **attrs) -> "FixedLayoutBuilder":
-        ET.SubElement(self.n.elem, "col", _attrs(**attrs))
-        return self
-
-    def row(self, **attrs) -> "FixedLayoutBuilder":
-        ET.SubElement(self.n.elem, "row", _attrs(**attrs))
-        return self
-
-    def done(self) -> LayoutBuilder:
-        return self._parent
-
-class AutoLayoutBuilder:
-    def __init__(self, node: _Node, parent: LayoutBuilder):
-        self.n = node
-        self._parent = parent
-
-    def region(self, **attrs) -> "AutoLayoutBuilder":
-        ET.SubElement(self.n.elem, "region", _attrs(**attrs))
-        return self
-
-    def done(self) -> LayoutBuilder:
-        return self._parent
-
-# ------------------------------ device ------------------------------
-
-class DeviceBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-
-
-    def sizing(self, **attrs) -> "DeviceBuilder":
-        ET.SubElement(self.n.elem, "sizing", _attrs(**attrs))
-        return self
-
-
-    def area(self, **attrs) -> "DeviceBuilder":
-        ET.SubElement(self.n.elem, "area", _attrs(**attrs))
-        return self
-
-
-    def chan_width_distr(self,
-                        x_distr: str, x_peak: float,
-                        y_distr: str, y_peak: float,
-                        x_width: Optional[float] = None,
-                        x_xpeak: Optional[float] = None,
-                        x_dc: Optional[float] = None,
-                        y_width: Optional[float] = None,
-                        y_xpeak: Optional[float] = None,
-                        y_dc: Optional[float] = None
-                        ) -> "DeviceBuilder":
-        cwd = ET.SubElement(self.n.elem, "chan_width_distr")
-        x_attrs = {"distr": x_distr, "peak": str(x_peak)}
-        if x_distr in ("gaussian", "pulse", "delta"):
-            if x_width is not None: x_attrs["width"] = str(x_width)
-            if x_xpeak is not None: x_attrs["xpeak"] = str(x_xpeak)
-            if x_dc is not None: x_attrs["dc"] = str(x_dc)
-        ET.SubElement(cwd, "x", x_attrs)
-
-
-        y_attrs = {"distr": y_distr, "peak": str(y_peak)}
-        if y_distr in ("gaussian", "pulse", "delta"):
-            if y_width is not None: y_attrs["width"] = str(y_width)
-            if y_xpeak is not None: y_attrs["xpeak"] = str(y_xpeak)
-            if y_dc is not None: y_attrs["dc"] = str(y_dc)
-        ET.SubElement(cwd, "y", y_attrs)
-        return self
-
-
-    def switch_block(self, **attrs) -> "DeviceBuilder":
-        ET.SubElement(self.n.elem, "switch_block", _attrs(**attrs))
-        return self
-
-
-    def connection_block(self, **attrs) -> "DeviceBuilder":
-        ET.SubElement(self.n.elem, "connection_block", _attrs(**attrs))
-        return self
-
-    def default_fc(self, in_type: str, in_val: float, out_type: str, out_val: float) -> "DeviceBuilder":
-        if ((in_type == "frac") | (in_type == "abs")):
-            if ((out_type == "frac") | (out_type == "abs")):
-                ET.SubElement(self.n.elem, "default_fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val": out_val})
-        return self
-
-    def done(self) -> Arch:
-        return self._arch
-
-# ------------------------------ switchlist ------------------------------
-
-class SwitchListBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-
-    def switch(self, *, name: str, type: str, R: float, Cin: float, Cout: float, Tdel: str, **extra) -> "SwitchListBuilder":
-        ET.SubElement(self.n.elem, "switch", _attrs(name=name, type=type, R=R, Cin=Cin, Cout=Cout, Tdel=Tdel, **extra))
-        return self
-
-    def done(self) -> Arch:
-        return self._arch
-
-# ------------------------------ segmentlist ------------------------------
-
-class SegmentListBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-
-    def segment(self, name: str, *, freq: float, length: int, type: str, Rmetal: float, Cmetal: float,
-                sb_pattern: str, cb_pattern: str, mux_name: Optional[str] = None, **attrs) -> "SegmentListBuilder":
-        seg = ET.SubElement(self.n.elem, "segment", _attrs(name=name, freq=freq, length=length, type=type, Rmetal=Rmetal, Cmetal=Cmetal, **attrs))
-        if mux_name:
-            ET.SubElement(seg, "mux", _attrs(name=mux_name))
-        sb = ET.SubElement(seg, "sb", _attrs(type="pattern"))
-        sb.text = sb_pattern
-        cb = ET.SubElement(seg, "cb", _attrs(type="pattern"))
-        cb.text = cb_pattern
-        return self
-
-    def done(self) -> Arch:
-        return self._arch
-
-# ------------------------------ complexblocklist / pb_types ------------------------------
-
-class ComplexBlockListBuilder:
-    def __init__(self, node: _Node, arch: Arch):
-        self.n = node
-        self._arch = arch
-
-    def pb_type(self, name: str, **attrs) -> "PbTypeBuilder":
-        return PbTypeBuilder(self.n._add("pb_type", name=name, **attrs), self)
-
-    def done(self) -> Arch:
-        return self._arch
-
-class PbTypeBuilder:
-    def __init__(self, node: _Node, parent: ComplexBlockListBuilder | ModeBuilder | None):
-        self.n = node
-        self._parent = parent
-
-    # ports
-    def input(self, name: str, num_pins: int = 1, **attrs) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "input", _attrs(name=name, num_pins=num_pins, **attrs))
-        return self
-
-    def output(self, name: str, num_pins: int = 1, **attrs) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "output", _attrs(name=name, num_pins=num_pins, **attrs))
-        return self
-
-    def clock(self, name: str, num_pins: int = 1, **attrs) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "clock", _attrs(name=name, num_pins=num_pins, **attrs))
-        return self
-
-    # timing annotations
-    def T_setup(self, port: str, clock: str, value: str, **attrs) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "T_setup", _attrs(port=port, clock=clock, value=value, **attrs))
-        return self
-
-    def T_hold(self, port: str, clock: str, value: str, **attrs) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "T_hold", _attrs(port=port, clock=clock, value=value, **attrs))
-        return self
-
-    def T_clock_to_Q(self, port: str, clock: str, max: Optional[str] = None, min: Optional[str] = None, **attrs) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "T_clock_to_Q", _attrs(port=port, clock=clock, max=max, min=min, **attrs))
-        return self
-
-    # modes and children
-    def mode(self, name: str, **attrs) -> "ModeBuilder":
-        return ModeBuilder(self.n._add("mode", name=name, **attrs), self)
-
-    def pb_type(self, name: str,  num_pb: int = 1, **attrs) -> "PbTypeBuilder":
-        # nested child pb_type
-        return PbTypeBuilder(self.n._add("pb_type", name=name, num_pb=num_pb, **attrs), self)
-
-    def interconnect(self) -> "InterconnectBuilder":
-        return InterconnectBuilder(self.n._add("interconnect"), self)
-
-    # pack patterns
-    def pack_pattern(self, name: str) -> "PbTypeBuilder":
-        ET.SubElement(self.n.elem, "pack_pattern", _attrs(name=name))
-        return self
-
-    # metadata / annotations convenience
-    def annotation(self, key: str, value: str) -> "PbTypeBuilder":
-        ann = ET.SubElement(self.n.elem, "annotation")
-        ET.SubElement(ann, "metadata", _attrs(key=key, value=value))
-        return self
-
-    def up(self):
-        return self._parent
-
-class ModeBuilder:
-    def __init__(self, node: _Node, parent: PbTypeBuilder):
-        self.n = node
-        self._parent = parent
-
-    def pb_type(self, name: str, **attrs) -> PbTypeBuilder:
-        return PbTypeBuilder(self.n._add("pb_type", name=name, **attrs), self)
-
-    def interconnect(self) -> "InterconnectBuilder":
-        return InterconnectBuilder(self.n._add("interconnect"), self)
-
-    def up(self) -> PbTypeBuilder:
-        return self._parent
-
-class InterconnectBuilder:
-    def __init__(self, node: _Node, parent: PbTypeBuilder | ModeBuilder):
-        self.n = node
-        self._parent = parent
-
-    # connection types
-    def direct(self, name: str, input: str, output: str, **attrs) -> "InterconnectBuilder":
-        ET.SubElement(self.n.elem, "direct", _attrs(name=name, input=input, output=output, **attrs))
-        return self
-
-    def mux(self, name: str, input: str, output: str, **attrs) -> "InterconnectBuilder":
-        ET.SubElement(self.n.elem, "mux", _attrs(name=name, input=input, output=output, **attrs))
-        return self
-
-    def complete(self, name: str, input: str, output: str, **attrs) -> "InterconnectBuilder":
-        ET.SubElement(self.n.elem, "complete", _attrs(name=name, input=input, output=output, **attrs))
-        return self
-
-    # delay annotations
-    def delay_constant(self, in_port: str, out_port: str, max: Optional[str] = None, min: Optional[str] = None) -> "InterconnectBuilder":
-        ET.SubElement(self.n.elem, "delay_constant", _attrs(in_port=in_port, out_port=out_port, max=max, min=min))
-        return self
-
-    def C_constant(self, in_port: str, out_port: str, C: str) -> "InterconnectBuilder":
-        ET.SubElement(self.n.elem, "C_constant", _attrs(in_port=in_port, out_port=out_port, C=C))
-        return self
-
-    def up(self):
-        return self._parent
-
-# ------------------------------ end of module ------------------------------
+    def sizing(self, nmos_w: str, pmos_w: str):
+        ET.SubElement(self._device, "sizing", {"R_minW_nmos": nmos_w, "R_minW_pmos": pmos_w})
+
+    def tile_area(self, tile_area: str):
+        ET.SubElement(self._device, "area", {"grid_logic_tile_area": tile_area})
+
+    def switch_block_type(self, type: str, fs: str):
+        if type not in ["wilton", "subset", "universal", "custom"]:
+            raise ValueError("type must be wilton, subset, universal, or custom")
+        
+        if type == "custom":
+            ET.SubElement(self._device, "switch_block", {"type": type})
+        else:
+            ET.SubElement(self._device, "switch_block", {"type": type, "fs": fs})
+
+    def xchannel_dist(self, distr: str, peak: str, width: Optional[str] = None, xpeak: Optional[str] = None, dc: Optional[str] = None):
+        if distr not in ["gaussian", "uniform", "pulse", "delta"]:
+            raise ValueError("Channel distribution must be gaussian, uniform, pulse, or delta")
+
+        if not hasattr(self, "_cwd"):
+            self._cwd = ET.SubElement(self.root, "chan_width_distr")
+
+        elems = {"distr": distr, "peak": peak}
+
+        if distr in ["pulse", "gaussian"]:
+            if width == None:
+                raise ValueError("Width must be provided for pulse and gaussian distributions")
+            else:
+                elems["width"] = width
+
+        if distr in ["pulse", "gaussian", "delta"]:
+            if xpeak == None:
+                raise ValueError("Xpeak must be provided for pulse, gaussian, and delta distributions")
+            else:
+                elems["xpeak"] = xpeak
+
+            if dc == None:
+                raise ValueError("Dc must be provided for pulse, gaussian, and delta distributions")
+            else:
+                elems["dc"] = dc
+            
+        ET.SubElement(self._cwd, "x", elems)
+
+    def ychannel_dist(self, distr: str, peak: str, width: Optional[str] = None, xpeak: Optional[str] = None, dc: Optional[str] = None):
+        if distr not in ["gaussian", "uniform", "pulse", "delta"]:
+            raise ValueError("Channel distribution must be gaussian, uniform, pulse, or delta")
+
+        if not hasattr(self, "_cwd"):
+            self._cwd = ET.SubElement(self.root, "chan_width_distr")
+
+        elems = {"distr": distr, "peak": peak}
+
+        if distr in ["pulse", "gaussian"]:
+            if width == None:
+                raise ValueError("Width must be provided for pulse and gaussian distributions")
+            else:
+                elems["width"] = width
+
+        if distr in ["pulse", "gaussian", "delta"]:
+            if xpeak == None:
+                raise ValueError("Xpeak must be provided for pulse, gaussian, and delta distributions")
+            else:
+                elems["xpeak"] = xpeak
+
+            if dc == None:
+                raise ValueError("Dc must be provided for pulse, gaussian, and delta distributions")
+            else:
+                elems["dc"] = dc
+            
+        ET.SubElement(self._cwd, "y", elems)
+
+    def fc_type(self, in_type: str, in_val: str, out_type: str, out_val: str):
+        if in_type not in ["frac", "abs"]:
+            raise ValueError("in_type must be frac or abs")
+        if out_type not in ["frac", "abs"]:
+            raise ValueError("out_type must be frac or abs")
+        ET.SubElement(self._device, "default_fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val": out_val})
+
+    #lz TODO verify there cannot be auto layout and fixed layout
+    def auto_layout(self, aspect_ratio: Optional[str] = None):
+        if self._layout.find("auto_layout") != None:
+            raise ValueError("Cannot have multiple auto layouts defined")
+        if self._layout.find("fixed_layout") != None:
+            raise ValueError("Cannot have fixed and auto layouts")
+        
+        if(aspect_ratio != None):
+            ET.SubElement(self._layout, "auto_layout", {"aspect_ratio": aspect_ratio})
+        else:
+            ET.SubElement(self._layout, "auto_layout")
+
+    def fixed_layout(self, name: str, width: str, height: str):
+        if self._layout.find("auto_layout") != None:
+            raise ValueError("Cannot have auto and fixed layouts")
+        
+        ET.SubElement(self._layout, "fixed_layout", {"name": name, "width": width, "height": height})
+
+#MARK: Model
+class Model(_Node):
+    def __init__(self, name: str, prune: str = "false"):
+        self.name = name
+        self.root = ET.Element("model", {"name": name, "never_prune": prune})
+        self.inputs: Dict[str, int] = {}
+        self.outputs: Dict[str, int] = {}
+        self.clocks: Dict[str, int] = {}
+        self._inputs = ET.SubElement(self.root, "input_ports")
+        self._outputs = ET.SubElement(self.root, "output_ports")
+
+    def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None, comb_ports: Optional[tuple] = None):
+        elems = {"name": name, "is_clock": "1" if is_clock else "0"}
+        if clock != None:
+            elems["clock"] = clock
+        if comb_ports != None:
+            elems["combinational_sink_ports"] = " ".join(comb_ports)
+
+        if is_clock:
+            self.clocks[name] = num_ports
+        else:
+            self.inputs[name] = num_ports
+
+        ET.SubElement(self._inputs, "port", elems)
+
+    def add_output_ports(self, name: str, num_ports: int = 1, clock: Optional[str] = None):
+        elems = {"name": name}
+        if clock != None:
+            elems["clock"] = clock
+
+        self.outputs[name] = num_ports
+
+        ET.SubElement(self._outputs, "port", elems)
+
+
+#MARK: Tile    
+class Tile(_Node):
+    def __init__(self, name: str, width: str = "1", height: str = "1", area: Optional[str] = None):
+        if area != None:
+            self.root = ET.Element("tile", {"name": name, "width": width, "height": height, "area":area})
+        else:
+            self.root = ET.Element("tile", {"name": name, "width": width, "height": height})
+
+    def add_sub_tile(self, subTile: SubTile):
+        self.root.append(subTile.to_elem())
+
+#MARK: SubTile
+class SubTile(_Node):
+    def __init__(self, name: str, capacity: str = "1"):
+        self.root = ET.Element("sub_tile", {"name": name, "capacity": capacity})
+
+    #lz I bet we can get inputs and outputs from the equivalent sites
+
+    def add_input(self, name: str, num_pins: str, equivalent: str = "none", is_global: Optional[str] = None):
+        if is_global != None:
+            ET.SubElement(self.root, "input", {"name": name, "num_pins": num_pins, "equivalent": equivalent, "is_non_clock_global": is_global})
+        else:
+            ET.SubElement(self.root, "input", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
+
+    def add_output(self, name: str, num_pins: str, equivalent: str = "none"):
+        ET.SubElement(self.root, "output", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
+
+    def add_clock(self, name: str, num_pins: str, equivalent: str = "none"):
+        ET.SubElement(self.root, "clock", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
+
+    #lz TODO add equivalent sites - should be able to snag em from the complex blocks list
+
+    def set_fc(self, in_type: str, in_val: str, out_type: str, out_val: str):
+        ET.SubElement(self.root, "fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val":out_val})
+
+    #lz TODO add pin locations - come from block list too?
+
+    #lz TODO - connection_block input switch is going to have to come from switchlist I fear
+
+#MARK: Switch
+class Switch(_Node):
+
+    def __init__(self, 
+                    type: str,
+                    name: str,
+                    R: str,
+                    Cin: str,
+                    Cout: str,
+                    Cinternal: Optional[str] = None,
+                    Tdel: Optional[str] = None, #lz TODO this needs to be required if there is no overall Tdel tag
+                    buf_size: Optional[str] = "auto",
+                    mux_trans_size: Optional[str] = None,
+                    power_buf_size: Optional[str] = None):
+        
+        if type not in ["mux", "tristate", "pass_gate", "short", "buffer"]:
+            raise ValueError("type must be mux, tristate, pass_gate, short, or buffer")
+        
+        if (type in ["mux", "tristate", "buffer"]) and (buf_size == None):
+            raise ValueError("buf_size must be defined for isolating switch types")
+        
+        if (type != "mux") and (mux_trans_size != None):
+            raise ValueError("mux_trans_size is only valid for mux type switches")
+
+        elems = {"type": type, "name": name, "R": R, "Cin": Cin, "Cout": Cout}
+        self.name = name
+        self.type = type
+
+        if Cinternal != None:
+            elems["Cinternal"] = Cinternal
+        if Tdel != None:
+            elems["Tdel"] = Tdel
+        if buf_size != None:
+            elems["buf_size"] = buf_size
+        if mux_trans_size != None:
+            elems["mux_trans_size"] = mux_trans_size
+        if power_buf_size != None:
+            elems["power_buf_size"] = power_buf_size
+
+        self.root = ET.Element("switch", elems)
+
+    def add_tdel(self, num_inputs: str, delay: str):
+        ET.SubElement(self.root, "Tdel", {"num_inputs": num_inputs, "delay": delay})
+
+#MARK: Segment
+class Segment(_Node):
+    def __init__(self,
+                 name: str,
+                 length: str,
+                 freq: str,
+                 Rmetal: str,
+                 Cmetal: str,
+                 type: str,
+                 axis: Optional[str] = None,
+                 res_type: Optional[str] = None): #lz TODO link res_type to specific clock nets?
+        if type not in ["bidir", "unidir"]:
+            raise ValueError("Type must be either bidir or unidir")
+        if length.isdigit():
+            self.length = int(length)
+        elif length == "longline":
+            self.length = 0
+            if (type != "bidir"):
+                raise ValueError("longline is only supported for bidir routing")
+        else:
+            raise ValueError("length must either be an integer or the keyword longline")
+
+        elems = {"name": name, "length": length, "freq": freq, "Rmetal": Rmetal, "Cmetal": Cmetal, "type": type}
+
+        if axis != None:
+            elems["axis"] = axis
+        if res_type != None:
+            elems["res_type"] = res_type
+
+        self.name = name
+        self.type = type
+        self.root = ET.Element("segment", elems)
+        self.switch_mux: Switch
+        self.switch_mux_inc: Switch
+        self.switch_mux_dec: Switch
+        self.switch_mux_inter_die: Switch
+        self.arch = arch
+
+    def switch_block_pattern(self, pattern: List[int]):
+        if self.length == 0:
+            raise ValueError("Cannot define switch block pattern with longline length")
+        if len(pattern) != self.length + 1:
+            raise ValueError("Switch block pattern must have length of segment + 1")
+        if not all(x in (0, 1) for x in pattern):
+            raise ValueError("Switch block pattern can only contain 1 and 0")
+        
+        ET.SubElement(self.root, "sb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
+
+    def connection_block_pattern(self, pattern: List[int]):
+        if self.length == 0:
+            raise ValueError("Cannot define connection block pattern with longline length")
+        if len(pattern) != self.length:
+            raise ValueError("Connection block pattern must have length of segment")
+        if not all(x in (0, 1) for x in pattern):
+            raise ValueError("Connection block pattern can only contain 1 and 0")
+        
+        ET.SubElement(self.root, "cb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
+
+    def mux(self, switch: Switch):
+        if self.type != "unidir":
+            raise ValueError("Mux can only be defined for segments of type unidir")
+        if switch.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        if self.root.find("mux_inc") != None:
+            raise ValueError("Mux cannot be defined alonside mux_inc/dec tag")
+
+        self.switch_mux = switch
+        ET.SubElement(self.root, "mux", {"name": switch.name})
+
+    def mux_inc_dec(self, switch_inc: Switch, switch_dec: Switch):
+        if self.type != "unidir":
+            raise ValueError("Mux can only be defined for segments of type unidir")
+        if switch_inc.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        if switch_dec.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        if self.root.find("mux") != None:
+            raise ValueError("Inc/Dec mux cannot be defined alonside mux tag")
+        
+        self.switch_mux_inc = switch_inc
+        self.switch_mux_dec = switch_dec
+        ET.SubElement(self.root, "mux_inc", {"name": switch_inc.name})
+        ET.SubElement(self.root, "mux_dec", {"name": switch_dec.name})
+
+    def mux_inter_die(self, switch: Switch):
+        if self.type != "unidir":
+            raise ValueError("Mux can only be defined for segments of type unidir")
+        if switch.type != "mux":
+            raise ValueError("Provided switch must be of type mux")
+        
+        self.switch_mux_inter_die = switch
+        ET.SubElement(self.root, "mux_inter_die", {"name": switch.name})
+
+    def wire_switch(self, switch: Switch):
+        if self.type != "bidir":
+            raise ValueError("Wire_switch can only be defined for segments of type bidir")
+        if not switch.type in ["tristate", "pass_gate"]:
+            raise ValueError("Provided switch must be of type tristate or pass_gate")
+        
+        ET.SubElement(self.root, "wire_switch", {"name": switch.name})
+
+    def opin_switch(self, switch: Switch):
+        if self.type != "bidir":
+            raise ValueError("Opin_switch can only be defined for segments of type bidir")
+        if not switch.type in ["tristate", "pass_gate"]:
+            raise ValueError("Provided switch must be of type tristate or pass_gate")
+        
+        ET.SubElement(self.root, "opin_switch", {"name": switch.name})
+
+#MARK: ComplexBlock
+class ComplexBlock(_Node):
+    def __init__(self,
+                 name: str,
+                 num_pb: int = 1):
+        self.name = name
+        self.num_pb = num_pb
+        self.contents: Dict[str, ComplexBlock | Primitive] = {}
+        self.pins: Dict[str, _Pin] = {}
+        self.num_dc: int = 0
+        self.num_cc: int = 0
+        self.num_mux: int = 0
+        self._graph = nx.Graph()
+
+        self.root = ET.Element("pb_type", {"name": name, "num_pb": str(num_pb)})
+        self._interconnect = ET.SubElement(self.root, "interconnect")
+
+    def get_graph(self) -> nx.Graph:
+        return self._graph
+
+    #lz TODO if we're adding another complex block then need to check its inputs/outputs for equivalence maybe
+    def add_block(self, block: ComplexBlock | Primitive):
+        self.contents[block.name] = block
+
+        self._graph.add_nodes_from(block.get_graph().nodes)
+        self._graph.add_edges_from(block.get_graph().edges)
+
+        self.root.append(block.to_elem())
+    
+    def add_input(self, name:str, num_pins: int, equivalence: Literal["none", "full", "instance"] = "none", is_non_clock_global: bool = False):
+        self.pins[name] = _Pin(self, name, "input", num_pins, equivalence, is_non_clock_global)
+
+        self._graph.add_nodes_from(self.pins[name].get_all_pins())
+
+        self.root.append(self.pins[name].get_xml_node())
+
+    def add_output(self, name: str, num_pins: int):
+        self.pins[name] = _Pin(self, name, "output", num_pins)
+
+        self._graph.add_nodes_from(self.pins[name].get_all_pins())
+
+        self.root.append(self.pins[name].get_xml_node())
+
+    def add_clock(self, name: str, num_pins: int):
+        self.pins[name] = _Pin(self, name, "clock", num_pins)
+
+        self._graph.add_nodes_from(self.pins[name].get_all_pins())
+
+        self.root.append(self.pins[name].get_xml_node())
+
+    #lz TODO add cases like x[9:0] -> out
+    #lz TODO add case for interacting with the complex block itself
+    def add_direct_connection(self,
+                              input_list: list[str], 
+                              output_list: list[str],
+                              name: Optional[str] = None):
+        if name == None:
+            name = "direct" + str(self.num_dc)
+            self.num_dc += 1
+
+        if len(input_list) != len(output_list):
+            raise ValueError("Direct connections must map 1:1 between inputs and outputs")
+        
+        for input, output in zip(input_list, output_list):
+            self._graph.add_edge(input, output)
+
+        elems = {"name": name}
+
+        if len(input_list) == 1:
+            elems["input"] = input_list[0]
+            elems["output"] = output_list[0]
+        else:
+            elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
+            elems["output"] = output_list[0][:-1] + ":" + str(int(output_list[0][-2]) + len(output_list) - 1) + "]"
+
+        ET.SubElement(self._interconnect, "direct", elems)
+
+    def add_complete_connection(self,
+                                inputs: list[list[str]],
+                                outputs: list[list[str]],
+                                name: Optional[str] = None):
+        
+        if name == None:
+            name = "complete" + str(self.num_cc)
+            self.num_cc += 1
+        
+        self._graph.add_node(name)
+        input_string_list = []
+        output_string_list = []
+
+        for pin_list in inputs:
+            if len(pin_list) == 1:
+                input_string_list.append(pin_list[0])
+            else:
+                input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
+
+            for pin in pin_list:
+                self._graph.add_edge(name, pin)
+
+        for pin_list in outputs:
+            if len(pin_list) == 1:
+                output_string_list.append(pin_list[0])
+            else:
+                output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
+
+            for pin in pin_list:
+                self._graph.add_edge(name, pin)
+
+        ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(input_string_list), "output": " ".join(output_string_list)})
+
+    def add_mux_connection(self,
+                           input_list: list[str],
+                           output: str,
+                           name: Optional[str] = None):
+        if name == None:
+            name = "mux" + str(self.num_mux)
+            self.num_mux += 1
+
+        self._graph.add_node(name)
+        self._graph.add_edge(name, output)
+
+        for pin in input_list:
+            self._graph.add_edge(name, pin)
+
+        elems = {"name": name, "output": output}
+
+        if len(input_list) == 1:
+            elems["input"] = input_list[0]
+        else:
+            elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
+
+        ET.SubElement(self._interconnect, "mux", elems)
+
+    #def add_mode(self, name: str, )
+
+#MARK: Primitive
+class Primitive(_Node):
+    #options for primitive model are input, output, lut4-6, ff, memory, or custom
+    def __init__(self,
+                 name: str,
+                 type: Literal["input", "output", "lut4", "lut5", "lut6", "ff", "memory", "custom"],
+                 blif_model: Optional[Model] = None,
+                 num_pb: int = 1,
+                 ):
+
+        self.elems = {}
+
+        self.name = name
+        self.elems["name"] = name
+        self.num_pb = num_pb
+        self.elems["num_pb"] = str(num_pb)
+        self.type = type
+
+        self._graph = nx.Graph()
+        self._graph.add_node(self.name)
+
+        #inputs, outputs, clocks are stored by name and number of pins
+        self.pins: Dict[str, _Pin] = {}
+
+        self.root = ET.Element("pb_type")
+
+        match type:
+            case "input":
+                self._input()
+            case "output":
+                self._output()
+            case "lut4":
+                self._lut(4)
+            case "lut5":
+                self._lut(5)
+            case "lut6":
+                self._lut(6)
+            case "ff":
+                self._ff()
+            case "memory":
+                if (blif_model == None):
+                    raise ValueError("If model is type memory, then blif_model parameter must be provided")
+                self._memory(blif_model)
+            case "custom":
+                if (blif_model == None):
+                    raise ValueError("If model is type custom, then blif_model parameter must be provided")
+                self._custom(blif_model)
+
+        self.root.attrib.update(self.elems)
+
+    def get_graph(self) -> nx.Graph:
+        return self._graph
+
+    def _input(self):
+        self.elems["blif_model"] = ".input"
+
+        self._add_input("in", 1)
+
+    def _output(self):
+        self.elems["blif_model"] = ".output"
+
+        self._add_output("out", 1)
+
+    def _lut(self, num_pins: int):
+        self.elems["blif_model"] = ".names"
+        self.elems["class"] = "lut"
+
+        self._add_input("in", num_pins, "lut_in")
+        self._add_output("out", 1, "lut_out")
+
+    def _ff(self):
+        self.elems["blif_model"] = ".latch"
+        self.elems["class"] = "flipflop"
+
+        self._add_input("D", 1, "D")
+        self._add_output("Q", 1, "Q")
+        self._add_clock("clock", 1, "clock")
+
+    #lz TODO memory
+    def _memory(self, blif_model: Model):
+        self.elems["blif_model"] = ".subckt " + blif_model.name
+        self.elems["class"] = "memory"
+
+    def _custom(self, blif_model: Model):
+        self.elems["blif_model"] = ".subckt " + blif_model.name
+
+        for port_name, value in blif_model.inputs.items():
+            self._add_input(name=port_name, num_pins=value)
+        for port_name, value in blif_model.outputs.items():
+            self._add_output(name=port_name, num_pins=value)
+        for port_name, value in blif_model.clocks.items():
+            self._add_clock(name=port_name, num_pins=value)
+
+    def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        self.pins[name] = _Pin(self, name, "input", num_pins)
+
+        for pin in self.pins[name].get_all_pins():
+            self._graph.add_node(pin)
+            self._graph.add_edge(self.name, pin)
+
+        if port_class != None:
+            ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
+        else:
+            ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
+
+    def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        self.pins[name] = _Pin(self, name, "output", num_pins)
+
+        for pin in self.pins[name].get_all_pins():
+            self._graph.add_node(pin)
+            self._graph.add_edge(self.name, pin)
+
+        if port_class != None:
+            ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
+        else:
+            ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
+
+    def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        self.pins[name] = _Pin(self, name, "clock", num_pins)
+
+        for pin in self.pins[name].get_all_pins():
+            self._graph.add_node(pin)
+            self._graph.add_edge(self.name, pin)
+
+        if port_class != None:
+            ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
+        else:
+            ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
+
+
+#MARK: Example Usage
+
+############################################
+
+
+arch = Arch()
+
+############ MODELS ###################
+
+ioModel = Model("io")
+ioModel.add_input_ports(name="we", is_clock=False)
+ioModel.add_output_ports(name="addr", clock=None)
+
+arch.add_model(ioModel)
+
+arch.add_model(Model("spram",  "true"))
+
+############# TILES ##############
+
+tile = Tile(name = "clb", area = "53894")
+subTile = SubTile(name = "clb")
+subTile.add_input(name = "I", num_pins="1")
+
+tile.add_sub_tile(subTile)
+
+arch.add_tile(tile)
+
+############## DEVICE ##################
+
+arch.sizing(nmos_w="8926", pmos_w="16067")
+arch.tile_area("0")
+arch.switch_block_type(type="custom", fs="")
+
+arch.xchannel_dist("uniform", "1.000000")
+arch.ychannel_dist("uniform", "1.000000")
+
+########### SWITCH ##################
+
+switch1 = Switch(type="mux", name="L4_driver", R="0.0", Cin="0.0", Cout="0.0", Tdel="185.8258e-12", mux_trans_size="6482996805637553", buf_size="744014602932605")
+arch.add_switch(switch1)
+
+############ SEGMENT #################
+
+l4Segment = Segment(name="L4", freq="280", length="4", type="unidir", Rmetal="0.0", Cmetal="0.0")
+l4Segment.switch_block_pattern([1, 1, 1, 1, 1])
+l4Segment.connection_block_pattern([1, 1, 1, 1])
+l4Segment.mux(switch1)
+
+arch.add_segment(l4Segment)
+
+########### GRAPH TEST ##############
+
+tp1 = Primitive("test_prim1", "lut6")
+tp2 = Primitive("test_prim2", "lut4")
+
+cb1 = ComplexBlock("test_block1")
+cb2 = ComplexBlock("test_block2")
+
+cb1.add_input("in1", 10)
+cb1.add_output("out1", 2)
+cb1.add_block(tp1)
+cb1.add_direct_connection(cb1.pins["in1"].get_pins_range(0, 5), tp1.pins["in"].get_all_pins())
+cb1.add_direct_connection(tp1.pins["out"].get_all_pins(), cb1.pins["out1"].get_pin(0))
+
+cb2.add_input("in1", 4)
+cb2.add_output("out1", 1)
+cb2.add_block(tp2)
+cb2.add_direct_connection(cb2.pins["in1"].get_all_pins(), tp2.pins["in"].get_all_pins())
+cb2.add_direct_connection(tp2.pins["out"].get_all_pins(), cb2.pins["out1"].get_all_pins())
+
+cb1.add_block(cb2)
+cb1.add_direct_connection(cb1.pins["in1"].get_pins_range(6, 9), cb2.pins["in1"].get_all_pins())
+cb1.add_direct_connection(cb2.pins["out1"].get_all_pins(), cb1.pins["out1"].get_pin(1))
+
+arch.add_pb(cb1)
+
+nx.draw(cb1.get_graph(), with_labels=True)
+plt.savefig("testgraph.png")
+
+############ PRINT ###################
+
+arch.save("my_arch.xml")
+print(arch.to_string()[:4000]) 
+
+        
