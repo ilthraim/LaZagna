@@ -477,50 +477,80 @@ class ComplexBlock(_Node):
         self.num_dc: int = 0
         self.num_cc: int = 0
         self.num_mux: int = 0
-        self._graph = nx.Graph()
+        self._graphs: Dict[str | None, nx.Graph] = {}
+        self._graphs[None] = nx.Graph() #default mode
+        self._modes: Dict[str, Mode] = {}
+        self._interconnect: ET.Element
+        #self._modes: Dict[str, List[ComplexBlock | Primitive]] = {}
 
         self.root = ET.Element("pb_type", {"name": name, "num_pb": str(num_pb)})
-        self._interconnect = ET.SubElement(self.root, "interconnect")
+        
 
-    def get_graph(self) -> nx.Graph:
-        return self._graph
+    def get_graph(self, mode: Optional[str] = None) -> nx.Graph:
+        return self._graphs[mode]
 
+    #lz TODO does contents really do anything for us?
     #lz TODO if we're adding another complex block then need to check its inputs/outputs for equivalence maybe
     def add_block(self, block: ComplexBlock | Primitive):
+
+        if block.name in self.contents:
+            raise ValueError("Block with this name already exists")
+
         self.contents[block.name] = block
 
-        self._graph.add_nodes_from(block.get_graph().nodes)
-        self._graph.add_edges_from(block.get_graph().edges)
+        self._graphs[None].add_nodes_from(block.get_graph().nodes)
+        self._graphs[None].add_edges_from(block.get_graph().edges)
 
         self.root.append(block.to_elem())
+
+        #lz TODO do we need to add the block to the xml here?
     
     def add_input(self, name:str, num_pins: int, equivalence: Literal["none", "full", "instance"] = "none", is_non_clock_global: bool = False):
         self.pins[name] = _Pin(self, name, "input", num_pins, equivalence, is_non_clock_global)
 
-        self._graph.add_nodes_from(self.pins[name].get_all_pins())
+        for graph in self._graphs.values():
+            graph.add_nodes_from(self.pins[name].get_all_pins())
 
         self.root.append(self.pins[name].get_xml_node())
 
     def add_output(self, name: str, num_pins: int):
         self.pins[name] = _Pin(self, name, "output", num_pins)
 
-        self._graph.add_nodes_from(self.pins[name].get_all_pins())
+        for graph in self._graphs.values():
+            graph.add_nodes_from(self.pins[name].get_all_pins())
 
         self.root.append(self.pins[name].get_xml_node())
 
     def add_clock(self, name: str, num_pins: int):
         self.pins[name] = _Pin(self, name, "clock", num_pins)
 
-        self._graph.add_nodes_from(self.pins[name].get_all_pins())
+        for graph in self._graphs.values():
+            graph.add_nodes_from(self.pins[name].get_all_pins())
 
         self.root.append(self.pins[name].get_xml_node())
 
     #lz TODO add cases like x[9:0] -> out
     #lz TODO add case for interacting with the complex block itself
+
+    def _add_interconnect_xml(self, interconnect: ET.Element, mode: Optional[str] = None):
+        if mode ==  None:
+            if self._interconnect == None:
+                self._interconnect = ET.SubElement(self.root, "interconnect")
+
+            self._interconnect.append(interconnect)
+        else:
+            if mode not in self._modes:
+                raise ValueError("Mode with this name does not exist")
+            
+
+            self._modes[mode]._add_interconnect_xml(interconnect)
+
+
     def add_direct_connection(self,
                               input_list: list[str], 
                               output_list: list[str],
-                              name: Optional[str] = None):
+                              name: Optional[str] = None,
+                              mode: Optional[str] = None):
         if name == None:
             name = "direct" + str(self.num_dc)
             self.num_dc += 1
@@ -529,7 +559,7 @@ class ComplexBlock(_Node):
             raise ValueError("Direct connections must map 1:1 between inputs and outputs")
         
         for input, output in zip(input_list, output_list):
-            self._graph.add_edge(input, output)
+            self._graphs[mode].add_edge(input, output)
 
         elems = {"name": name}
 
@@ -540,18 +570,19 @@ class ComplexBlock(_Node):
             elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
             elems["output"] = output_list[0][:-1] + ":" + str(int(output_list[0][-2]) + len(output_list) - 1) + "]"
 
-        ET.SubElement(self._interconnect, "direct", elems)
+        self._add_interconnect_xml(ET.Element("direct", elems))
 
     def add_complete_connection(self,
                                 inputs: list[list[str]],
                                 outputs: list[list[str]],
-                                name: Optional[str] = None):
+                                name: Optional[str] = None,
+                                mode: Optional[str] = None):
         
         if name == None:
             name = "complete" + str(self.num_cc)
             self.num_cc += 1
         
-        self._graph.add_node(name)
+        self._graphs[mode].add_node(name)
         input_string_list = []
         output_string_list = []
 
@@ -562,7 +593,7 @@ class ComplexBlock(_Node):
                 input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
 
             for pin in pin_list:
-                self._graph.add_edge(name, pin)
+                self._graphs[mode].add_edge(name, pin)
 
         for pin_list in outputs:
             if len(pin_list) == 1:
@@ -571,23 +602,24 @@ class ComplexBlock(_Node):
                 output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
 
             for pin in pin_list:
-                self._graph.add_edge(name, pin)
+                self._graphs[mode].add_edge(name, pin)
 
-        ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(input_string_list), "output": " ".join(output_string_list)})
+        self._add_interconnect_xml(ET.Element("complete", {"name": name, "input": " ".join(input_string_list), "output": " ".join(output_string_list)}))
 
     def add_mux_connection(self,
                            input_list: list[str],
                            output: str,
-                           name: Optional[str] = None):
+                           name: Optional[str] = None,
+                           mode: Optional[str] = None):
         if name == None:
             name = "mux" + str(self.num_mux)
             self.num_mux += 1
 
-        self._graph.add_node(name)
-        self._graph.add_edge(name, output)
+        self._graphs[mode].add_node(name)
+        self._graphs[mode].add_edge(name, output)
 
         for pin in input_list:
-            self._graph.add_edge(name, pin)
+            self._graphs[mode].add_edge(name, pin)
 
         elems = {"name": name, "output": output}
 
@@ -596,9 +628,19 @@ class ComplexBlock(_Node):
         else:
             elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
 
-        ET.SubElement(self._interconnect, "mux", elems)
+        self._add_interconnect_xml(ET.Element("mux", elems))
 
-    #def add_mode(self, name: str, )
+    def add_mode(self, mode: Mode):
+        if mode.name in self._graphs:
+            raise ValueError("Mode with this name already exists")
+        
+        self.root.append(mode.to_elem())
+
+        self._modes[mode.name] = mode
+
+        self._graphs[mode.name] = self._graphs[None].copy()
+        self._graphs[mode.name].add_nodes_from(mode.get_graph().nodes)
+        self._graphs[mode.name].add_edges_from(mode.get_graph().edges)
 
 #MARK: Primitive
 class Primitive(_Node):
@@ -728,7 +770,28 @@ class Primitive(_Node):
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
+#MARK: Mode
+class Mode(_Node):
+    def __init__(self, name: str, disable_packing: bool = False):
+        self.name = name
+        self.root = ET.Element("mode", {"name": name, "disable_packing": "true" if disable_packing else "false"})
+        self.contents: Dict[str, ComplexBlock | Primitive] = {}
+        self.disable_packing = disable_packing
+        self._graph = nx.Graph()
+        self._interconnect = ET.SubElement(self.root, "interconnect")
 
+    def add_block(self, block: ComplexBlock | Primitive):
+        self.contents[block.name] = block
+
+        self.root.append(block.to_elem())
+        self._graph.add_nodes_from(block.get_graph().nodes)
+        self._graph.add_edges_from(block.get_graph().edges)
+
+    def get_graph(self) -> nx.Graph:
+        return self._graph
+
+    def _add_interconnect_xml(self, interconnect: ET.Element):
+        self._interconnect.append(interconnect)
 
 #MARK: Example Usage
 
@@ -739,11 +802,11 @@ arch = Arch()
 
 ############ MODELS ###################
 
-ioModel = Model("io")
-ioModel.add_input_ports(name="we", is_clock=False)
-ioModel.add_output_ports(name="addr", clock=None)
+io_model = Model("io"))
+io_model.add_input_ports(name="outpad")
+io_model.add_output_ports(name="addr")
 
-arch.add_model(ioModel)
+arch.add_model(io_model)
 
 arch.add_model(Model("spram",  "true"))
 
@@ -782,29 +845,22 @@ arch.add_segment(l4Segment)
 
 ########### GRAPH TEST ##############
 
-tp1 = Primitive("test_prim1", "lut6")
-tp2 = Primitive("test_prim2", "lut4")
+io = ComplexBlock(name="io")
+io.add_input(name="outpad", num_pins=1)
+io.add_output(name="inpad", num_pins=1)
 
-cb1 = ComplexBlock("test_block1")
-cb2 = ComplexBlock("test_block2")
+iopad = Primitive(name="iopad", type="custom", blif_model=io_model)
 
-cb1.add_input("in1", 10)
-cb1.add_output("out1", 2)
-cb1.add_block(tp1)
-cb1.add_direct_connection(cb1.pins["in1"].get_pins_range(0, 5), tp1.pins["in"].get_all_pins())
-cb1.add_direct_connection(tp1.pins["out"].get_all_pins(), cb1.pins["out1"].get_pin(0))
+physical = Mode(name="physical", disable_packing=True)
+physical.add_block(iopad)
 
-cb2.add_input("in1", 4)
-cb2.add_output("out1", 1)
-cb2.add_block(tp2)
-cb2.add_direct_connection(cb2.pins["in1"].get_all_pins(), tp2.pins["in"].get_all_pins())
-cb2.add_direct_connection(tp2.pins["out"].get_all_pins(), cb2.pins["out1"].get_all_pins())
+#lz TODO Should connections take place inside mode actually?
+#lz TODO actually I was going to change the clb logic to be mode and the mode to be clb and that way everything works out and a clb cant have modes and blocks
 
-cb1.add_block(cb2)
-cb1.add_direct_connection(cb1.pins["in1"].get_pins_range(6, 9), cb2.pins["in1"].get_all_pins())
-cb1.add_direct_connection(cb2.pins["out1"].get_all_pins(), cb1.pins["out1"].get_pin(1))
+physical.add_direct_connection()
 
-arch.add_pb(cb1)
+
+io.add_mode()
 
 nx.draw(cb1.get_graph(), with_labels=True)
 plt.savefig("testgraph.png")
