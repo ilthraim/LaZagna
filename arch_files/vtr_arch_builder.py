@@ -27,8 +27,7 @@ class _GraphBlock:
         self.base_block = base_block
 
 class _Pin():
-    def __init__(self, 
-                 parent_block: ComplexBlock | Primitive, 
+    def __init__(self,
                  name: str, 
                  type: Literal["input", "output", "clock"], 
                  num_pins: int = 1,
@@ -39,7 +38,6 @@ class _Pin():
         if is_non_clock_global and type != "input":
             raise ValueError("is_non_clock_global is only valid for input pins")
 
-        self.parent_block = parent_block
         self.name = name
         self.type = type
         self.equivalence = equivalence
@@ -49,13 +47,30 @@ class _Pin():
             self.is_non_clock_global = is_non_clock_global
 
     def get_pin(self, index) -> list[str]:
-        return [self.parent_block.name + "." + self.name + "[" + str(index) + "]"]
+        return [self.name + "[" + str(index) + "]"]
+    
+    def get_pins(self, index: int | tuple[int, int] = 0) -> str:
+        if isinstance(index, int):
+            if index < 0 or index >= self.num_pins:
+                raise ValueError("Index out of range")
+            return self.name + "[" + str(index) + "]"
+        elif isinstance(index, tuple) and len(index) == 2:
+            if index[0] < 0 or index[1] >= self.num_pins or index[1] < index[0]:
+                raise ValueError("Index out of range")
+            return_list = []
+
+            for x in range(index[0], index[1] + 1):
+                return_list.append(self.name + "[" + str(x) + "]")
+
+            return return_list
+        else:
+            raise ValueError("Index must be an integer or a tuple of two integers")
 
     def get_all_pins(self) -> list[str]:
         return_list = []
 
         for x in range(0, self.num_pins):
-            return_list.append(self.parent_block.name + "." + self.name + "[" + str(x) + "]")
+            return_list.append(self.name + "[" + str(x) + "]")
 
         return return_list
     
@@ -148,9 +163,7 @@ class Arch(_Node):
     def tile_area(self, tile_area: str):
         ET.SubElement(self._device, "area", {"grid_logic_tile_area": tile_area})
 
-    def switch_block_type(self, type: str, fs: str):
-        if type not in ["wilton", "subset", "universal", "custom"]:
-            raise ValueError("type must be wilton, subset, universal, or custom")
+    def switch_block_type(self, type: Literal["wilton", "subset", "univeral", "custom"], fs: str):
         
         if type == "custom":
             ET.SubElement(self._device, "switch_block", {"type": type})
@@ -603,10 +616,11 @@ class Primitive(_Node):
         self.type = type
 
         self._graph = nx.Graph()
-        self._graph.add_node(self.name)
+        for prim in range(0, num_pb):
+            self._graph.add_node(self.name + "[" + str(prim) + "]")
 
         #inputs, outputs, clocks are stored by name and number of pins
-        self.pins: Dict[str, _Pin] = {}
+        self._pins: List[Dict[str, _Pin]] = [{} for _ in range(num_pb)]
 
         self.root = ET.Element("pb_type")
 
@@ -634,79 +648,97 @@ class Primitive(_Node):
 
         self.root.attrib.update(self.elems)
 
+    def pins(self, name:str, index: int | tuple[int, int] = 0, block_index: int | tuple[int, int] = 0) -> str:
+        if isinstance(block_index, int):
+            if block_index < 0 or block_index >= self.num_pb:
+                raise ValueError("Index out of range")
+            if self.num_pb == 1:
+                return self.name + "." + self._pins[block_index][name].get_pins(index)
+            else:
+                return self.name + "[" + str(block_index) + "]." + self._pins[block_index][name].get_pins(index)
+        elif isinstance(block_index, tuple) and len(block_index) == 2:
+            if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
+                raise ValueError("Index out of range")
+            return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + self._pins[block_index[0]][name].get_pins(index)
+        else:
+            raise ValueError("Index must be an integer or a tuple of two integers")
+
     def get_graph(self) -> nx.Graph:
         return self._graph
 
-    def _input(self):
+    def _input(self, num_pb: int = 1):
         self.elems["blif_model"] = ".input"
 
-        self._add_input("in", 1)
+        self._add_output("in", 1, num_pb)
 
-    def _output(self):
+    def _output(self, num_pb: int = 1):
         self.elems["blif_model"] = ".output"
 
-        self._add_output("out", 1)
+        self._add_input("out", 1, num_pb)
 
-    def _lut(self, num_pins: int):
+    def _lut(self, num_pins: int, num_pb: int = 1):
         self.elems["blif_model"] = ".names"
         self.elems["class"] = "lut"
 
-        self._add_input("in", num_pins, "lut_in")
-        self._add_output("out", 1, "lut_out")
+        self._add_input("in", num_pins, num_pb, "lut_in")
+        self._add_output("out", 1, num_pb, "lut_out")
 
-    def _ff(self):
+    def _ff(self, num_pb: int = 1):
         self.elems["blif_model"] = ".latch"
         self.elems["class"] = "flipflop"
 
-        self._add_input("D", 1, "D")
-        self._add_output("Q", 1, "Q")
-        self._add_clock("clock", 1, "clock")
+        self._add_input(name = "D",num_pins =  1,num_pb=num_pb, port_class= "D")
+        self._add_output(name = "Q",num_pins= 1, num_pb=num_pb, port_class= "Q")
+        self._add_clock(name="clock",num_pins= 1, num_pb=num_pb, port_class="clock")
 
     #lz TODO memory
-    def _memory(self, blif_model: Model):
+    def _memory(self, blif_model: Model, num_pb: int = 1):
         self.elems["blif_model"] = ".subckt " + blif_model.name
         self.elems["class"] = "memory"
 
-    def _custom(self, blif_model: Model):
+    def _custom(self, blif_model: Model, num_pb: int = 1):
         self.elems["blif_model"] = ".subckt " + blif_model.name
 
         for port_name, value in blif_model.inputs.items():
-            self._add_input(name=port_name, num_pins=value)
+            self._add_input(name=port_name, num_pins=value, num_pb=num_pb)
         for port_name, value in blif_model.outputs.items():
-            self._add_output(name=port_name, num_pins=value)
+            self._add_output(name=port_name, num_pins=value, num_pb=num_pb)
         for port_name, value in blif_model.clocks.items():
-            self._add_clock(name=port_name, num_pins=value)
+            self._add_clock(name=port_name, num_pins=value, num_pb=num_pb)
 
-    def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
-        self.pins[name] = _Pin(self, name, "input", num_pins)
+    def _add_input(self, name: str, num_pins: int, num_pb: int, port_class: Optional[str] = None):
+        for ii in range (0, num_pb):
+            self._pins[ii][name] = _Pin(self, name, "input", num_pins)
 
-        for pin in self.pins[name].get_all_pins():
-            self._graph.add_node(pin)
-            self._graph.add_edge(self.name, pin)
+            for pin in self._pins[ii][name].get_all_pins():
+                self._graph.add_node(pin)
+                self._graph.add_edge(self.name, pin)
 
         if port_class != None:
             ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
 
-    def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
-        self.pins[name] = _Pin(self, name, "output", num_pins)
+    def _add_output(self, name: str, num_pins: int, num_pb:int, port_class: Optional[str] = None):
+        for ii in range (0, num_pb):
+            self._pins[ii][name] = _Pin(self, name, "output", num_pins)
 
-        for pin in self.pins[name].get_all_pins():
-            self._graph.add_node(pin)
-            self._graph.add_edge(self.name, pin)
+            for pin in self._pins[ii][name].get_all_pins():
+                self._graph.add_node(pin)
+                self._graph.add_edge(self.name, pin)
 
         if port_class != None:
             ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
         else:
             ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
 
-    def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
-        self.pins[name] = _Pin(self, name, "clock", num_pins)
+    def _add_clock(self, name: str, num_pins: int, num_pb:int, port_class: Optional[str] = None):
+        for ii in range (0, num_pb):
+            self._pins[ii][name] = _Pin(self, name, "clock", num_pins)
 
-        for pin in self.pins[name].get_all_pins():
-            self._graph.add_node(pin)
-            self._graph.add_edge(self.name, pin)
+            for pin in self._pins[ii][name].get_all_pins():
+                self._graph.add_node(pin)
+                self._graph.add_edge(self.name, pin)
 
         if port_class != None:
             ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
@@ -780,7 +812,7 @@ arch = Arch()
 
 io_model = Model("io")
 io_model.add_input_ports(name="outpad")
-io_model.add_output_ports(name="addr")
+io_model.add_output_ports(name="inpad")
 
 arch.add_model(io_model)
 
@@ -829,12 +861,32 @@ iopad = Primitive(name="iopad", type="custom", blif_model=io_model)
 
 physical = Mode(name="physical", disable_packing=True)
 physical.add_block(iopad)
+physical.add_direct_connection(input_list = io.pins["outpad"].get_all_pins(), output_list = iopad.pins["outpad"].get_all_pins())
+physical.add_direct_connection(input_list = iopad.pins["inpad"].get_all_pins(), output_list = io.pins["inpad"].get_all_pins())
+
+inpad = Mode(name="inpad")
+inpad_prim = Primitive(name="inpad", type="input")
+inpad.add_block(inpad_prim)
+inpad.add_direct_connection(input_list = inpad_prim.pins["in"].get_all_pins(), output_list = io.pins["inpad"].get_all_pins())
+
+io.add_mode(physical)
+io.add_mode(inpad)
+
+clb = ComplexBlock(name="clb")
+clb.add_input(name="I", num_pins=40,equivalence="full")
+clb.add_output(name="O", num_pins=10)
+clb.add_clock(name="clk", num_pins=1)
+
+fle = ComplexBlock(name="fle", num_pb=10)
+
+arch.add_pb(io)
+arch.add_pb(clb)
 
 #lz TODO Should connections take place inside mode actually?
 #lz TODO actually I was going to change the clb logic to be mode and the mode to be clb and that way everything works out and a clb cant have modes and blocks
 
-nx.draw(cb1.get_graph(), with_labels=True)
-plt.savefig("testgraph.png")
+# nx.draw(io.get_graph(), with_labels=True)
+# plt.savefig("testgraph.png")
 
 ############ PRINT ###################
 
