@@ -28,6 +28,7 @@ class _GraphBlock:
 
 class _Pin():
     def __init__(self,
+                 block_name: str,
                  name: str,
                  type: Literal["input", "output", "clock"], 
                  num_pins: int = 1,
@@ -38,6 +39,7 @@ class _Pin():
         if is_non_clock_global and type != "input":
             raise ValueError("is_non_clock_global is only valid for input pins")
 
+        self.block_name = block_name
         self.name = name
         self.type = type
         self.equivalence = equivalence
@@ -50,11 +52,11 @@ class _Pin():
         if isinstance(index, int):
             if index < 0 or index >= self.num_pins:
                 raise ValueError("Index out of range")
-            return self.name + "[" + str(index) + "]"
+            return self.block_name + "." + self.name + "[" + str(index) + "]"
         elif isinstance(index, tuple) and len(index) == 2:
             if index[0] < 0 or index[1] >= self.num_pins or index[1] < index[0]:
                 raise ValueError("Index out of range")
-            return self.name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
+            return self.block_name + "." + self.name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
         else:
             raise ValueError("Index must be an integer or a tuple of two integers")
 
@@ -62,11 +64,11 @@ class _Pin():
         if isinstance(index, int):
             if index < 0 or index >= self.num_pins:
                 raise ValueError("Index out of range")
-            return [self.name + "[" + str(index) + "]"]
+            return [self.block_name + "." + self.name + "[" + str(index) + "]"]
         elif isinstance(index, tuple) and len(index) == 2:
             if index[0] < 0 or index[1] >= self.num_pins or index[1] < index[0]:
                 raise ValueError("Index out of range")
-            return [self.name + "[" + str(i) + "]" for i in range(index[0], index[1] + 1)]
+            return [self.block_name + "." + self.name + "[" + str(i) + "]" for i in range(index[0], index[1] + 1)]
         else:
             raise ValueError("Index must be an integer or a tuple of two integers")
         
@@ -495,6 +497,9 @@ class Mode(_Node):
 
         self.contents[block.name] = block
 
+        self._graph.add_nodes_from(block.get_graph().nodes)
+        self._graph.add_edges_from(block.get_graph().edges)
+
         self.root.append(block.to_elem())
 
         #lz TODO do we need to add the block to the xml here?
@@ -509,8 +514,11 @@ class Mode(_Node):
             name = "direct" + str(self.num_dc)
             self.num_dc += 1
 
-        # if len(input_list) != len(output_list):
-        #     raise ValueError("Direct connections must map 1:1 between inputs and outputs")
+        if len(input_list) != len(output_list):
+            raise ValueError("Direct connections must map 1:1 between inputs and outputs")
+        
+        for input, output in zip(input_list, output_list):
+            self._graph.add_edge(input, output)
 
         elems = {"name": name}
 
@@ -528,7 +536,8 @@ class Mode(_Node):
     def add_complete_connection(self,
                                 inputs: list[str],
                                 outputs: list[str],
-                                name: Optional[str] = None):
+                                name: Optional[str] = None,
+                                mode: Optional[str] = None):
         
         if name == None:
             name = "complete" + str(self.num_cc)
@@ -538,23 +547,23 @@ class Mode(_Node):
         input_string_list = []
         output_string_list = []
 
-        # for pin_list in inputs:
-        #     if len(pin_list) == 1:
-        #         input_string_list.append(pin_list[0])
-        #     else:
-        #         input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
+        for pin_list in inputs:
+            if len(pin_list) == 1:
+                input_string_list.append(pin_list[0])
+            else:
+                input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
 
-        #     for pin in pin_list:
-        #         self._graph.add_edge(name, pin)
+            for pin in pin_list:
+                self._graph.add_edge(name, pin)
 
-        # for pin_list in outputs:
-        #     if len(pin_list) == 1:
-        #         output_string_list.append(pin_list[0])
-        #     else:
-        #         output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
+        for pin_list in outputs:
+            if len(pin_list) == 1:
+                output_string_list.append(pin_list[0])
+            else:
+                output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
 
-        #     for pin in pin_list:
-        #         self._graph.add_edge(name, pin)
+            for pin in pin_list:
+                self._graph.add_edge(name, pin)
 
         ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(inputs), "output": " ".join(outputs)})
 
@@ -566,11 +575,11 @@ class Mode(_Node):
             name = "mux" + str(self.num_mux)
             self.num_mux += 1
 
-        # self._graph.add_node(name)
-        # self._graph.add_edge(name, output)
+        self._graph.add_node(name)
+        self._graph.add_edge(name, output)
 
-        # for pin in input_list:
-        #     self._graph.add_edge(name, pin)
+        for pin in input_list:
+            self._graph.add_edge(name, pin)
 
         elems = {"name": name, "input": " ".join(input_list), "output": output}
 
@@ -635,46 +644,18 @@ class Primitive(_Node):
     #lz TODO need to change pins function to not add the name of the block to the return because its stored in the pin object
     #lz TODO need to figure out how this interacts with adding connections (do I return a list of strings or a single string?)
 
-    def pins(self, name:str, index: Optional[int | tuple[int, int]] = None, block_index: Optional[int | tuple[int, int]] = None) -> str:
-        if index == None:
-            if block_index == None:
-                return self.name + "." + name
-            elif isinstance(block_index, int):
-                if block_index < 0 or block_index >= self.num_pb:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index) + "]." + name
-            elif isinstance(block_index, tuple) and len(block_index) == 2:
-                if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + name
+    def pins(self, name:str, index: int | tuple[int, int] = 0, block_index: int | tuple[int, int] = 0) -> list[str]:
+        if isinstance(block_index, int):
+            if block_index < 0 or block_index >= self.num_pb:
+                raise ValueError("Index out of range")
+            if self.num_pb == 1:
+                return [self._pins[block_index][name].get_pins(index)]
             else:
-                raise ValueError("Block index must be an integer or a tuple of two integers")
-        elif isinstance(index, int):
-            if block_index == None:
-                return self.name + "." + name + "[" + str(index) + "]"
-            elif isinstance(block_index, int):
-                if block_index < 0 or block_index >= self.num_pb:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index) + "]." + name + "[" + str(index) + "]"
-            elif isinstance(block_index, tuple) and len(block_index) == 2:
-                if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + name + "[" + str(index) + "]"
-            else:
-                raise ValueError("Block index must be an integer or a tuple of two integers")
-        elif isinstance(index, tuple) and len(index) == 2:
-            if block_index == None:
-                return self.name + "." + name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
-            elif isinstance(block_index, int):
-                if block_index < 0 or block_index >= self.num_pb:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index) + "]." + name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
-            elif isinstance(block_index, tuple) and len(block_index) == 2:
-                if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
-            else:
-                raise ValueError("Block index must be an integer or a tuple of two integers")
+                return [self._pins[block_index][name].get_pins(index)]
+        elif isinstance(block_index, tuple) and len(block_index) == 2:
+            if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
+                raise ValueError("Index out of range")
+            return [self._pins[ii][name].get_pins(index) for ii in range(block_index[0], block_index[1] + 1)]
         else:
             raise ValueError("Index must be an integer or a tuple of two integers")
 
@@ -723,13 +704,13 @@ class Primitive(_Node):
 
     def _add_input(self, name: str, num_pins: int, num_pb: int, port_class: Optional[str] = None):
         if num_pb == 1:
-            self._pins[0][name] = _Pin(name=name, type="input", num_pins=num_pins)
+            self._pins[0][name] = _Pin(block_name=self.name, name=name, type="input", num_pins=num_pins)
 
             self._graph.add_node(self._pins[0][name].get_pins())
             self._graph.add_edge(self.name, self._pins[0][name].get_pins())
         else:
             for ii in range (0, num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="input", num_pins=num_pins)
+                self._pins[ii][name] = _Pin(block_name=self.name + "[" + str(ii) + "]", name =  name, type="input", num_pins=num_pins)
 
                 for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins)):
                     self._graph.add_node(pin)
@@ -742,13 +723,13 @@ class Primitive(_Node):
 
     def _add_output(self, name: str, num_pins: int, num_pb:int, port_class: Optional[str] = None):
         if num_pb == 1:
-            self._pins[0][name] = _Pin(name=name, type="output", num_pins=num_pins)
+            self._pins[0][name] = _Pin(block_name = self.name,name=name, type="output", num_pins=num_pins)
 
             self._graph.add_node(self._pins[0][name].get_pins())
             self._graph.add_edge(self.name, self._pins[0][name].get_pins())
         else:
             for ii in range (0, num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="output", num_pins=num_pins)
+                self._pins[ii][name] = _Pin(block_name=self.name + "[" + str(ii) + "]", name=name, type="output", num_pins=num_pins)
 
                 for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins)):
                     self._graph.add_node(pin)
@@ -761,13 +742,13 @@ class Primitive(_Node):
 
     def _add_clock(self, name: str, num_pins: int, num_pb:int, port_class: Optional[str] = None):
         if num_pb == 1:
-            self._pins[0][name] = _Pin(name=name, type="clock", num_pins=num_pins)
+            self._pins[0][name] = _Pin(block_name = self.name,name=name, type="clock", num_pins=num_pins)
 
             self._graph.add_node(self._pins[0][name].get_pins())
             self._graph.add_edge(self.name, self._pins[0][name].get_pins())
         else:
             for ii in range (0, num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="clock", num_pins=num_pins)
+                self._pins[ii][name] = _Pin(block_name=self.name + "[" + str(ii) + "]", name=name, type="clock", num_pins=num_pins)
 
                 for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins)):
                     self._graph.add_node(pin)
@@ -787,10 +768,6 @@ class ComplexBlock(_Node):
         self._modes: Dict[str, Mode] = {}
         self._pins: List[Dict[str, _Pin]] = [{} for _ in range(num_pb)]
         self.num_pb = num_pb
-        self._interconnect = ET.SubElement(self.root, "interconnect")
-        self.num_dc: int = 0
-        self.num_cc: int = 0
-        self.num_mux: int = 0
 
     def add_block(self, block: ComplexBlock | Primitive):
         if len(self._modes) not in [0, 1] or (len(self._modes) == 1 and list(self._modes.values())[0].name != "default"):
@@ -806,13 +783,13 @@ class ComplexBlock(_Node):
 
     def add_input(self, name:str, num_pins: int, equivalence: Literal["none", "full", "instance"] = "none", is_non_clock_global: bool = False):
         if self.num_pb == 1:
-            self._pins[0][name] = _Pin(name= name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global)
+            self._pins[0][name] = _Pin(block_name=self.name, name= name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global)
 
             self._graph.add_node(self._pins[0][name].get_pins())
             self._graph.add_edge(self.name, self._pins[0][name].get_pins())
         else:
             for ii in range (0, self.num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global)
+                self._pins[ii][name] = _Pin(block_name=self.name + "[" + str(ii) + "]", name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global)
 
                 for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins - 1)):
                     self._graph.add_node(pin)
@@ -821,13 +798,13 @@ class ComplexBlock(_Node):
 
     def add_output(self, name: str, num_pins: int):
         if self.num_pb == 1:
-            self._pins[0][name] = _Pin(name= name, type="output", num_pins=num_pins)
+            self._pins[0][name] = _Pin(block_name=self.name, name= name, type="output", num_pins=num_pins)
 
             self._graph.add_node(self._pins[0][name].get_pins())
             self._graph.add_edge(self.name, self._pins[0][name].get_pins())
         else:
             for ii in range (0, self.num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="output", num_pins=num_pins)
+                self._pins[ii][name] = _Pin(block_name=self.name + "[" + str(ii) + "]", name=name, type="output", num_pins=num_pins)
 
                 for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins - 1)):
                     self._graph.add_node(pin)
@@ -836,13 +813,13 @@ class ComplexBlock(_Node):
 
     def add_clock(self, name: str, num_pins: int):
         if self.num_pb == 1:
-            self._pins[0][name] = _Pin(name= name, type="clock", num_pins=num_pins)
+            self._pins[0][name] = _Pin(block_name=self.name, name= name, type="clock", num_pins=num_pins)
 
             self._graph.add_node(self._pins[0][name].get_pins())
             self._graph.add_edge(self.name, self._pins[0][name].get_pins())
         else:
             for ii in range (0, self.num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="clock", num_pins=num_pins)
+                self._pins[ii][name] = _Pin(block_name=self.name + "[" + str(ii) + "]", name=name, type="clock", num_pins=num_pins)
 
                 for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins - 1)):
                     self._graph.add_node(pin)
@@ -862,131 +839,23 @@ class ComplexBlock(_Node):
         self._graph.add_nodes_from(mode.get_graph().nodes)
         self._graph.add_edges_from(mode.get_graph().edges)
 
-    def pins(self, name:str, index: Optional[int | tuple[int, int]] = None, block_index: Optional[int | tuple[int, int]] = None) -> str:
-        if index == None:
-            if block_index == None:
-                return self.name + "." + name
-            elif isinstance(block_index, int):
-                if block_index < 0 or block_index >= self.num_pb:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index) + "]." + name
-            elif isinstance(block_index, tuple) and len(block_index) == 2:
-                if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + name
+    def pins(self, name:str, index: int | tuple[int, int] = 0, block_index: int | tuple[int, int] = 0) -> list[str]:
+        if isinstance(block_index, int):
+            if block_index < 0 or block_index >= self.num_pb:
+                raise ValueError("Index out of range")
+            if self.num_pb == 1:
+                return [self._pins[block_index][name].get_pins(index)]
             else:
-                raise ValueError("Block index must be an integer or a tuple of two integers")
-        elif isinstance(index, int):
-            if block_index == None:
-                return self.name + "." + name + "[" + str(index) + "]"
-            elif isinstance(block_index, int):
-                if block_index < 0 or block_index >= self.num_pb:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index) + "]." + name + "[" + str(index) + "]"
-            elif isinstance(block_index, tuple) and len(block_index) == 2:
-                if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + name + "[" + str(index) + "]"
-            else:
-                raise ValueError("Block index must be an integer or a tuple of two integers")
-        elif isinstance(index, tuple) and len(index) == 2:
-            if block_index == None:
-                return self.name + "." + name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
-            elif isinstance(block_index, int):
-                if block_index < 0 or block_index >= self.num_pb:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index) + "]." + name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
-            elif isinstance(block_index, tuple) and len(block_index) == 2:
-                if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
-                    raise ValueError("Block index out of range")
-                return self.name + "[" + str(block_index[0]) + ":" + str(block_index[1]) + "]." + name + "[" + str(index[0]) + ":" + str(index[1]) + "]"
-            else:
-                raise ValueError("Block index must be an integer or a tuple of two integers")
+                return [self._pins[block_index][name].get_pins(index)]
+        elif isinstance(block_index, tuple) and len(block_index) == 2:
+            if block_index[0] < 0 or block_index[1] >= self.num_pb or block_index[1] < block_index[0]:
+                raise ValueError("Index out of range")
+            return [self._pins[ii][name].get_pins(index) for ii in range(block_index[0], block_index[1] + 1)]
         else:
             raise ValueError("Index must be an integer or a tuple of two integers")
 
     def get_graph(self) -> nx.Graph:
         return self._graph
-    
-    def add_direct_connection(self,
-                            input_list: list[str], 
-                            output_list: list[str],
-                            name: Optional[str] = None):
-        if name == None:
-            name = "direct" + str(self.num_dc)
-            self.num_dc += 1
-
-        # if len(input_list) != len(output_list):
-        #     raise ValueError("Direct connections must map 1:1 between inputs and outputs")
-
-        elems = {"name": name}
-
-        if len(input_list) == 1:
-            elems["input"] = input_list[0]
-            elems["output"] = output_list[0]
-        else:
-            elems["input"] = " ".join(input_list)
-            elems["output"] = " ".join(output_list)
-
-        ET.SubElement(self._interconnect, "direct", elems)
-
-
-    #lz TODO need to graph this somehow (oh wait we use the individual get methods from pin)
-    def add_complete_connection(self,
-                                inputs: list[str],
-                                outputs: list[str],
-                                name: Optional[str] = None):
-        
-        if name == None:
-            name = "complete" + str(self.num_cc)
-            self.num_cc += 1
-        
-        self._graph.add_node(name)
-        input_string_list = []
-        output_string_list = []
-
-        # for pin_list in inputs:
-        #     if len(pin_list) == 1:
-        #         input_string_list.append(pin_list[0])
-        #     else:
-        #         input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
-
-        #     for pin in pin_list:
-        #         self._graph.add_edge(name, pin)
-
-        # for pin_list in outputs:
-        #     if len(pin_list) == 1:
-        #         output_string_list.append(pin_list[0])
-        #     else:
-        #         output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
-
-        #     for pin in pin_list:
-        #         self._graph.add_edge(name, pin)
-
-        ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(inputs), "output": " ".join(outputs)})
-
-    def add_mux_connection(self,
-                           input_list: list[str],
-                           output: str,
-                           name: Optional[str] = None):
-        if name == None:
-            name = "mux" + str(self.num_mux)
-            self.num_mux += 1
-
-        # self._graph.add_node(name)
-        # self._graph.add_edge(name, output)
-
-        # for pin in input_list:
-        #     self._graph.add_edge(name, pin)
-
-        elems = {"name": name, "input": " ".join(input_list), "output": output}
-
-        # if len(input_list) == 1:
-        #     elems["input"] = input_list[0]
-        # else:
-        #     elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
-
-        ET.SubElement(self._interconnect, "mux", elems)
 
 
 #MARK: Example Usage
@@ -1061,17 +930,11 @@ lut6 = Primitive(name="lut6", type="lut6")
 ff = Primitive(name="ff", type="ff")
 ble6.add_block(lut6)
 ble6.add_block(ff)
-
-ble6.add_direct_connection([ble6.pins("in")], [lut6.pins("in")])
-ble6.add_direct_connection([lut6.pins("out")], [ff.pins("D")])
-ble6.add_direct_connection([ble6.pins("clk")], [ff.pins("clock")])
-ble6.add_mux_connection([ff.pins("Q"), lut6.pins("out")], ble6.pins("out"))
-
 n1_lut6.add_block(ble6)
 
 fle.add_mode(n1_lut6)
 
-n1_lut6.add_direct_connection([fle.pins("in")], [ble6.pins("in")])
+n1_lut6.add_direct_connection(fle.pins("in"), ble6.pins("in"))
 
 clb.add_block(fle)
 
