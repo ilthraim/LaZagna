@@ -18,6 +18,19 @@ class _Pin():
     pins: _Pins
     index: int
 
+    def __str__(self) -> str:
+        return f"{self.pins._name}[{self.index}]"
+    
+    def __repr__(self) -> str:
+        return f"_Pin({self.pins._name}[{self.index}])"
+
+class _PinList(list):
+    def __init__(self, pins: list[_Pin]):
+        super().__init__(pins)
+
+    def __str__(self) -> str:
+        return f"{self[0].pins._name}[{self[0].index}:{self[-1].index}]"
+
 class _Pins():
     def __init__(self,
                  name: str,
@@ -54,7 +67,7 @@ class _Pins():
                 start = index.start
                 stop = index.stop + 1
                 step = 1
-            return self._pins[start:stop:step]
+            return _PinList(self._pins[start:stop:step])
         return self._pins[index]
 
     def __setitem__(self, index, value):
@@ -62,6 +75,9 @@ class _Pins():
 
     def __len__(self):
         return self._num_pins
+
+    def __iter__(self):
+        return iter(self._pins)
     
     def get_xml_node(self) -> ET.Element:
         attrs = {"name": self._name, "num_pins": str(self._num_pins)}
@@ -70,3 +86,13 @@ class _Pins():
         if self._type == "input" and hasattr(self, "_is_non_clock_global"):
             attrs["is_non_clock_global"] = "true"
         return ET.Element(self._type, attrs)
+    
+    def __str__(self) -> str:
+        """Return VTR-style pin specification for all pins"""
+        if self._num_pins == 1:
+            return f"{self._name}[0]"
+        else:
+            return f"{self._name}[0:{self._num_pins-1}]"
+    
+    def __repr__(self) -> str:
+        return f"_Pins(name='{self._name}', type='{self._type}', num_pins={self._num_pins})"

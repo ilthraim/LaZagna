@@ -3,72 +3,94 @@ from dataclasses import dataclass
 import networkx as nx
 from typing import Optional, Dict, List, Literal
 import xml.etree.ElementTree as ET
-from .vtr_utils import _Node, _Pins
+from .vtr_utils import _Node, _PinList, _Pins, _Pin
 from .vtr_core import Model
-
-#OKAY I THINK WE DIVORCE THE IDEA OF NUM_PB FROM THE BLOCK ITSELF AND INSTEAD THE PARENT KNOWS HOW MANY OF A BLOCK IT HAS
 
 #MARK: Mode
 class Mode(_Node):
     def __init__(self,
                  name: str,
                  disable_packing: bool = False):
-        _BlockWithInterconnect.__init__(self, ET.Element("mode", {"name": name, "disable_packing": str("true" if disable_packing else "false")}))
+        self._root = ET.Element("mode", {"name": name, "disable_packing": str("true" if disable_packing else "false")})
         self._name = name
-        self._contents: Dict[str, ComplexBlock | Primitive] = {}
-
+        self._contents: List[ComplexBlock | Primitive] = []
         self._interconnect = ET.SubElement(self.root, "interconnect")
+        self._graph = nx.Graph()
+        self.num_dc = 0
+        self.num_cc = 0
+        self.num_mux = 0
 
+    #lz TODO error check inputs and outputs
     def add_direct_connection(self,
-                              input_list: list[str], 
-                              output_list: list[str],
+                              input_list: list[_PinList | _Pins], 
+                              output_list: list[_PinList | _Pins],
                               name: Optional[str] = None):
         if name == None:
             name = "direct" + str(self.num_dc)
             self.num_dc += 1
 
-        # if len(input_list) != len(output_list):
-        #     raise ValueError("Direct connections must map 1:1 between inputs and outputs")
-
-        elems = {"name": name}
-
-        if len(input_list) == 1:
-            elems["input"] = input_list[0]
-            elems["output"] = output_list[0]
-        else:
-            elems["input"] = " ".join(input_list)
-            elems["output"] = " ".join(output_list)
+        elems = {
+            "name": name,
+            "input": " ".join(str(x) for x in input_list),
+            "output": " ".join(str(x) for x in output_list)
+        }
 
         ET.SubElement(self._interconnect, "direct", elems)
+
+        self._graph.add_edges_from((inp, out) for inp in input_list for out in output_list)
 
 
     #lz TODO need to graph this somehow (oh wait we use the individual get methods from pin)
     def add_complete_connection(self,
-                                inputs: list[str],
-                                outputs: list[str],
+                                inputs: list[_PinList | _Pins],
+                                outputs: list[_PinList | _Pins],
                                 name: Optional[str] = None):
         
         if name == None:
             name = "complete" + str(self.num_cc)
             self.num_cc += 1
         
+        elems = {
+            "name": name,
+            "input": " ".join(str(x) for x in inputs),
+            "output": " ".join(str(x) for x in outputs)
+        }
+        ET.SubElement(self._interconnect, "complete", elems)
+
         self._graph.add_node(name)
-        input_string_list = []
-        output_string_list = []
+        self._graph.add_edges_from((inp, name) for inp in inputs)
+        self._graph.add_edges_from((name, out) for out in outputs)
 
-        ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(inputs), "output": " ".join(outputs)})
-
+    #lz TODO wait did we decide that mux output has to be width 1
     def add_mux_connection(self,
-                           input_list: list[str],
-                           output: str,
+                           inputs: list[_PinList | _Pins],
+                           output: _Pin | _Pins,
                            name: Optional[str] = None):
+        if isinstance(output, _Pins):
+            if len(output) != 1:
+                raise ValueError("Mux output must be a single pin")
+
         if name == None:
             name = "mux" + str(self.num_mux)
             self.num_mux += 1
 
-        elems = {"name": name, "input": " ".join(input_list), "output": output}
-
+        elems = {
+            "name": name,
+            "input": " ".join(str(x) for x in inputs),
+            "output": str(output)
+        }
         ET.SubElement(self._interconnect, "mux", elems)
+
+        self._graph.add_node(name)
+        self._graph.add_edges_from((inp, name) for inp in inputs)
+        self._graph.add_edge(name, output)
+
+    def add_block(self, block: ComplexBlock | Primitive):
+        if block in self._contents:
+            raise ValueError("Block with name " + block._name + " already exists in this mode")
+        self._contents.append(block)
+        self._root.append(block.to_elem())
+        nx.compose(self._graph, block._graph)
 
 #MARK: Primitive
 
@@ -93,7 +115,10 @@ class Primitive(_Node):
 
         self._graph = nx.Graph().add_nodes_from(self._primitive_nodes)
 
-        self.root = ET.Element("pb_type")
+        self._name = name
+        self._type = type
+        self._num_pb = num_pb
+        self._root = ET.Element("pb_type")
         self._elems = {"name": name, "num_pb": str(num_pb)}
         self._type = type
 
@@ -188,11 +213,13 @@ class Primitive(_Node):
 
         for prim_node in self._primitive_nodes:
             prim_node._add_pins(name, _Pins(name=name, type="input", num_pins=num_pins))
+            self._graph.add_nodes_from(getattr(prim_node, name)._pins)
+            self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
 
-        if port_class != None:
-            ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
-        else:
-            ET.SubElement(self.root, "input", {"name": name, "num_pins": str(num_pins)})
+        attrs = {"name": name, "num_pins": str(num_pins)}
+        if port_class is not None:
+            attrs["port_class"] = port_class
+        ET.SubElement(self.root, "input", attrs)
 
     def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
         if hasattr(self, name):
@@ -203,84 +230,94 @@ class Primitive(_Node):
         for prim_node in self._primitive_nodes:
             prim_node._add_pins(name, _Pins(name=name, type="output", num_pins=num_pins))
 
-        if port_class != None:
-            ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
-        else:
-            ET.SubElement(self.root, "output", {"name": name, "num_pins": str(num_pins)})
+        attrs = {"name": name, "num_pins": str(num_pins)}
+        if port_class is not None:
+            attrs["port_class"] = port_class
+        ET.SubElement(self.root, "output", attrs)
 
     def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this primitive")
 
-        setattr(self, name, _Pins(name=name, type="input", num_pins=num_pins))
+        setattr(self, name, _Pins(name=name, type="clock", num_pins=num_pins))
 
         for prim_node in self._primitive_nodes:
-            prim_node._add_pins(name, _Pins(name=name, type="input", num_pins=num_pins))
+            prim_node._add_pins(name, _Pins(name=name, type="clock", num_pins=num_pins))
 
-        if port_class != None:
-            ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins), "port_class": port_class})
-        else:
-            ET.SubElement(self.root, "clock", {"name": name, "num_pins": str(num_pins)})
-            
+        attrs = {"name": name, "num_pins": str(num_pins)}
+        if port_class is not None:
+            attrs["port_class"] = port_class
+        ET.SubElement(self.root, "clock", attrs)
+       
 #MARK: ComplexBlock
-class ComplexBlock(_Node, _BlockWithPins, _BlockWithInterconnect):
+class _ComplexBlock_Node():
+    def __init__(self, parent: ComplexBlock, index: int):
+        self.parent = parent
+        self.index = index
+
+    def _add_pins(self, name: str, pins: _Pins):
+        setattr(self, name, pins)
+
+class ComplexBlock(_Node):
     def __init__(self, name: str, num_pb:int = 1):
-        _BlockWithPins.__init__(self, name=name, num_pb=num_pb)
-        _BlockWithInterconnect.__init__(self, ET.Element("pb_type", {"name": name, "num_pb": str(num_pb)}))
-        self._modes: Dict[str, Mode] = {}
-        self._pins: List[Dict[str, _Pin]] = [{} for _ in range(num_pb)]
-        self._interconnect = ET.SubElement(self.root, "interconnect")
+        self._name = name
+        self._num_pb = num_pb
+        self._root = ET.Element("pb_type", {"name": name, "num_pb": str(num_pb)})
+        self._modes: List[Mode] = []
+        self._contents: List[ComplexBlock | Primitive] = []
+        self._interconnect = ET.SubElement(self._root, "interconnect")
+        self._graph = nx.Graph()
+
+        self._pb_nodes = [_ComplexBlock_Node(self, i) for i in range(num_pb)]
 
     def add_block(self, block: ComplexBlock | Primitive):
-        if len(self._modes) not in [0, 1] or (len(self._modes) == 1 and list(self._modes.values())[0].name != "default"):
+        if len(self._modes) > 0:
             raise ValueError("Blocks can only be added to complex blocks with default mode")
 
-        _BlockWithInterconnect.add_block(self, block)
+        if block in self._contents:
+            raise ValueError("Block with name " + block._name + " already exists in this mode")
+        self._contents.append(block)
+        self._root.append(block.to_elem())
+        nx.compose(self._graph, block._graph)
 
     def add_input(self, name:str, num_pins: int, equivalence: Literal["none", "full", "instance"] = "none", is_non_clock_global: bool = False):
-        if self.num_pb == 1:
-            self._pins[0][name] = _Pin(name= name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global)
+        if hasattr(self, name):
+            raise ValueError("Pin with name " + name + " already exists in this complex block")
 
-            self._graph.add_node(self._pins[0][name].get_pins())
-            self._graph.add_edge(self.name, self._pins[0][name].get_pins())
-        else:
-            for ii in range (0, self.num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global)
+        setattr(self, name, _Pins(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
 
-                for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins - 1)):
-                    self._graph.add_node(pin)
+        for pb in self._pb_nodes:
+            pb._add_pins(name, _Pins(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
+            self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        self.root.append(self._pins[0][name].get_xml_node())
+        self.root.append(getattr(self, name).get_xml_node())
 
     def add_output(self, name: str, num_pins: int):
-        if self.num_pb == 1:
-            self._pins[0][name] = _Pin(name= name, type="output", num_pins=num_pins)
+        if hasattr(self, name):
+            raise ValueError("Pin with name " + name + " already exists in this complex block")
 
-            self._graph.add_node(self._pins[0][name].get_pins())
-            self._graph.add_edge(self.name, self._pins[0][name].get_pins())
-        else:
-            for ii in range (0, self.num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="output", num_pins=num_pins)
+        setattr(self, name, _Pins(name=name, type="output", num_pins=num_pins))
 
-                for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins - 1)):
-                    self._graph.add_node(pin)
+        for pb in self._pb_nodes:
+            pb._add_pins(name, _Pins(name=name, type="output", num_pins=num_pins))
+            self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        self.root.append(self._pins[0][name].get_xml_node())
+        self.root.append(getattr(self, name).get_xml_node())
 
     def add_clock(self, name: str, num_pins: int):
-        if self.num_pb == 1:
-            self._pins[0][name] = _Pin(name= name, type="clock", num_pins=num_pins)
+        if hasattr(self, name):
+            raise ValueError("Pin with name " + name + " already exists in this complex block")
 
-            self._graph.add_node(self._pins[0][name].get_pins())
-            self._graph.add_edge(self.name, self._pins[0][name].get_pins())
-        else:
-            for ii in range (0, self.num_pb):
-                self._pins[ii][name] = _Pin(name=name, type="clock", num_pins=num_pins)
+        setattr(self, name, _Pins(name=name, type="clock", num_pins=num_pins))
 
-                for pin in self._pins[ii][name]._get_pins_indiv((0, num_pins - 1)):
-                    self._graph.add_node(pin)
+        for pb in self._pb_nodes:
+            pb._add_pins(name, _Pins(name=name, type="clock", num_pins=num_pins))
+            self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        self.root.append(self._pins[0][name].get_xml_node())
+        self.root.append(getattr(self, name).get_xml_node())
+
+#MARK: TODO HERE
+#lz TODO need to do add_mode and the connections between pbs. Check VTR arch xml: do pbs connect to anything above them. 
 
     def add_mode(self, mode: Mode):
         if mode.name in self._modes:
