@@ -67,7 +67,7 @@ ble6.add_input(name="input", num_pins=6)
 ble6.add_block(lut6)
 ble6.add_block(ff)
 #ble6.add_direct_connection(inputs=[ble6.input], outputs=[lut6.input]) # type: ignore
-ble6.add_direct_connection(inputs=ble6.input, outputs=lut6[0:1].input[0:5])
+ble6.add_direct_connection(inputs=ble6[0:1].input, outputs=lut6.input[0:5])
 
 print(ble6.input[0:2]) # type: ignore
 

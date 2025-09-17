@@ -297,7 +297,14 @@ class _ComplexBlock_Node_Helper(list):
             return_list.append(getattr(pb, self._name)[index]) # type: ignore
         return return_list
     
-class _ComplexBlock_Node_Slice_Helper(list):
+class _ComplexBlock_Node_Slice_Helper():
+    def __init__(self, parent: ComplexBlock, start: int, stop: int):
+        self._parent = parent
+        self._start = start
+        self._stop = stop
+
+    def __getattr__(self, name):
+        return [getattr(pb, name) for pb in self._parent._pb_nodes[self._start:self._stop]]
 
 class ComplexBlock(_Node):
     def __init__(self, name: str, num_pb:int = 1):
@@ -483,11 +490,11 @@ class ComplexBlock(_Node):
                 raise IndexError("Slice step is not supported")
             if index.start > index.stop:
                 start = index.start
-                stop = index.stop - 1 if index.stop != 0 else None
+                stop = index.stop - 1 if index.stop != 0 else self._num_pb
                 step = -1
             else:
                 start = index.start
                 stop = index.stop + 1
                 step = 1
-            return self._pb_nodes[start:stop:step]
+            return _ComplexBlock_Node_Slice_Helper(self, start, stop)
         return self._pb_nodes[index]
