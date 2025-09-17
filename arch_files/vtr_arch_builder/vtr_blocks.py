@@ -1,10 +1,12 @@
 from __future__ import annotations
-from dataclasses import dataclass
+import keyword
 import networkx as nx
-from typing import Optional, Dict, List, Literal
+from typing import TYPE_CHECKING, Optional, List, Literal
 import xml.etree.ElementTree as ET
 from .vtr_utils import _Node, _PinList, _Pins, _Pin
-from .vtr_core import Model
+
+if TYPE_CHECKING:
+    from .vtr_core import Model
 
 #MARK: Mode
 class Mode(_Node):
@@ -14,7 +16,7 @@ class Mode(_Node):
         self._root = ET.Element("mode", {"name": name, "disable_packing": str("true" if disable_packing else "false")})
         self._name = name
         self._contents: List[ComplexBlock | Primitive] = []
-        self._interconnect = ET.SubElement(self.root, "interconnect")
+        self._interconnect = ET.SubElement(self._root, "interconnect")
         self._graph = nx.Graph()
         self.num_dc = 0
         self.num_cc = 0
@@ -22,8 +24,8 @@ class Mode(_Node):
 
     #lz TODO error check inputs and outputs
     def add_direct_connection(self,
-                              input_list: list[_PinList | _Pins], 
-                              output_list: list[_PinList | _Pins],
+                              inputs: list[_PinList | _Pins], 
+                              outputs: list[_PinList | _Pins],
                               name: Optional[str] = None):
         if name == None:
             name = "direct" + str(self.num_dc)
@@ -31,13 +33,13 @@ class Mode(_Node):
 
         elems = {
             "name": name,
-            "input": " ".join(str(x) for x in input_list),
-            "output": " ".join(str(x) for x in output_list)
+            "input": " ".join(str(x) for x in inputs),
+            "output": " ".join(str(x) for x in outputs)
         }
 
         ET.SubElement(self._interconnect, "direct", elems)
 
-        self._graph.add_edges_from((inp, out) for inp in input_list for out in output_list)
+        self._graph.add_edges_from((inp, out) for inp in inputs for out in outputs)
 
 
     #lz TODO need to graph this somehow (oh wait we use the individual get methods from pin)
@@ -98,6 +100,7 @@ class _Primitive_Node():
     def __init__(self, parent: Primitive, index: int):
         self.parent = parent
         self.index = index
+        self.nodeName = f"{self.parent._name}[{self.index}]"
 
     def _add_pins(self, name: str, pins: _Pins):
         setattr(self, name, pins)
@@ -110,12 +113,12 @@ class Primitive(_Node):
                  blif_model: Optional[Model] = None,
                  num_pb: int = 1,
                  ):
-
+        self._name = name
         self._primitive_nodes = [_Primitive_Node(self, i) for i in range(num_pb)]
 
-        self._graph = nx.Graph().add_nodes_from(self._primitive_nodes)
+        self._graph = nx.Graph()
+        self._graph.add_nodes_from(self._primitive_nodes)
 
-        self._name = name
         self._type = type
         self._num_pb = num_pb
         self._root = ET.Element("pb_type")
@@ -144,7 +147,7 @@ class Primitive(_Node):
                     raise ValueError("If model is type custom, then blif_model parameter must be provided")
                 self._custom(blif_model)
 
-        self.root.attrib.update(self._elems)
+        self._root.attrib.update(self._elems)
 
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -168,19 +171,19 @@ class Primitive(_Node):
     def _input(self, num_pb: int = 1):
         self._elems["blif_model"] = ".input"
 
-        self._add_output("in", 1)
+        self._add_output("input", 1)
 
     def _output(self, num_pb: int = 1):
         self._elems["blif_model"] = ".output"
 
-        self._add_input("out", 1)
+        self._add_input("output", 1)
 
     def _lut(self, num_pins: int, num_pb: int = 1):
         self._elems["blif_model"] = ".names"
         self._elems["class"] = "lut"
 
-        self._add_input("in", num_pins, "lut_in")
-        self._add_output("out", 1, "lut_out")
+        self._add_input("input", num_pins, "lut_in")
+        self._add_output("output", 1, "lut_out")
 
     def _ff(self, num_pb: int = 1):
         self._elems["blif_model"] = ".latch"
@@ -208,55 +211,93 @@ class Primitive(_Node):
     def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this primitive")
-        
-        setattr(self, name, _Pins(name=name, type="input", num_pins=num_pins))
 
         for prim_node in self._primitive_nodes:
-            prim_node._add_pins(name, _Pins(name=name, type="input", num_pins=num_pins))
+            prim_node._add_pins(name, _Pins(prim_node, name=name, type="input", num_pins=num_pins))
             self._graph.add_nodes_from(getattr(prim_node, name)._pins)
             self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
+
+        setattr(self, name, [getattr(prim_node, name) for prim_node in self._primitive_nodes])
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
             attrs["port_class"] = port_class
-        ET.SubElement(self.root, "input", attrs)
+        ET.SubElement(self._root, "input", attrs)
 
     def _add_output(self, name: str, num_pins: int, port_class: Optional[str] = None):
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this primitive")
 
-        setattr(self, name, _Pins(name=name, type="output", num_pins=num_pins))
-
         for prim_node in self._primitive_nodes:
-            prim_node._add_pins(name, _Pins(name=name, type="output", num_pins=num_pins))
+            prim_node._add_pins(name, _Pins(prim_node, name=name, type="output", num_pins=num_pins))
+            self._graph.add_nodes_from(getattr(prim_node, name)._pins)
+            self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
+
+        setattr(self, name, [getattr(prim_node, name) for prim_node in self._primitive_nodes])
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
             attrs["port_class"] = port_class
-        ET.SubElement(self.root, "output", attrs)
+        ET.SubElement(self._root, "output", attrs)
 
     def _add_clock(self, name: str, num_pins: int, port_class: Optional[str] = None):
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this primitive")
 
-        setattr(self, name, _Pins(name=name, type="clock", num_pins=num_pins))
-
         for prim_node in self._primitive_nodes:
-            prim_node._add_pins(name, _Pins(name=name, type="clock", num_pins=num_pins))
+            prim_node._add_pins(name, _Pins(prim_node, name=name, type="clock", num_pins=num_pins))
+            self._graph.add_nodes_from(getattr(prim_node, name)._pins)
+            self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
+
+        setattr(self, name, [getattr(prim_node, name) for prim_node in self._primitive_nodes])
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
             attrs["port_class"] = port_class
-        ET.SubElement(self.root, "clock", attrs)
+        ET.SubElement(self._root, "clock", attrs)
+
+    def get_graph(self):
+        return self._graph
        
 #MARK: ComplexBlock
 class _ComplexBlock_Node():
     def __init__(self, parent: ComplexBlock, index: int):
         self.parent = parent
         self.index = index
+        self.nodeName = f"{self.parent._name}[{self.index}]"
 
     def _add_pins(self, name: str, pins: _Pins):
         setattr(self, name, pins)
+
+class _ComplexBlock_Node_Helper(list):
+    def __init__(self, parent: ComplexBlock, pinlist: list[_Pins], name: str):
+        super().__init__(pinlist)
+        self._parent = parent
+        self._name = name
+
+    def __getitem__(self, index):
+        return_list = []
+        if isinstance(index, slice):
+            if index.start is None or index.stop is None:
+                raise IndexError("Slice must have both start and stop defined")
+            if index.start < 0 or index.stop < 0:
+                raise IndexError("Negative indices are not supported")
+            if index.step is not None:
+                raise IndexError("Slice step is not supported")
+            if index.start > index.stop:
+                raise IndexError("Slice step is not supported")
+            else:
+                start = index.start
+                stop = index.stop + 1
+            for pb in self._parent._pb_nodes:
+                return_list.append(getattr(pb, self._name)[start:stop]) # type: ignore
+            return return_list
+
+        for pb in self._parent._pb_nodes:
+            return_list.append(getattr(pb, self._name)[index]) # type: ignore
+        return return_list
+    
+class _ComplexBlock_Node_Slice_Helper(list):
 
 class ComplexBlock(_Node):
     def __init__(self, name: str, num_pb:int = 1):
@@ -267,6 +308,9 @@ class ComplexBlock(_Node):
         self._contents: List[ComplexBlock | Primitive] = []
         self._interconnect = ET.SubElement(self._root, "interconnect")
         self._graph = nx.Graph()
+        self.num_dc = 0
+        self.num_cc = 0
+        self.num_mux = 0
 
         self._pb_nodes = [_ComplexBlock_Node(self, i) for i in range(num_pb)]
 
@@ -278,136 +322,172 @@ class ComplexBlock(_Node):
             raise ValueError("Block with name " + block._name + " already exists in this mode")
         self._contents.append(block)
         self._root.append(block.to_elem())
-        nx.compose(self._graph, block._graph)
+        self._graph = nx.compose(self._graph, block._graph)
 
     def add_input(self, name:str, num_pins: int, equivalence: Literal["none", "full", "instance"] = "none", is_non_clock_global: bool = False):
+        if keyword.iskeyword(name):
+            raise ValueError("Pin name cannot be a reserved keyword: " + name)
+
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this complex block")
 
-        setattr(self, name, _Pins(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
+        #setattr(self, name, _Pins(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
 
         for pb in self._pb_nodes:
-            pb._add_pins(name, _Pins(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
+            pb._add_pins(name, _Pins(pb, name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
             self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        self.root.append(getattr(self, name).get_xml_node())
+        setattr(self, name, _ComplexBlock_Node_Helper(self, [getattr(pb, name) for pb in self._pb_nodes], name))
+
+        #lz TODO gotta make the parent tag optional
+        self._root.append(_Pins(self._pb_nodes[0], name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global).get_xml_node())
 
     def add_output(self, name: str, num_pins: int):
+        if keyword.iskeyword(name):
+            raise ValueError("Pin name cannot be a reserved keyword: " + name)
+
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this complex block")
 
-        setattr(self, name, _Pins(name=name, type="output", num_pins=num_pins))
-
         for pb in self._pb_nodes:
-            pb._add_pins(name, _Pins(name=name, type="output", num_pins=num_pins))
+            pb._add_pins(name, _Pins(pb, name=name, type="output", num_pins=num_pins))
             self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        self.root.append(getattr(self, name).get_xml_node())
+        setattr(self, name, [getattr(pb, name) for pb in self._pb_nodes])
+
+        self._root.append(getattr(self, name).get_xml_node())
 
     def add_clock(self, name: str, num_pins: int):
+        if keyword.iskeyword(name):
+            raise ValueError("Pin name cannot be a reserved keyword: " + name)
+
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this complex block")
 
-        setattr(self, name, _Pins(name=name, type="clock", num_pins=num_pins))
-
         for pb in self._pb_nodes:
-            pb._add_pins(name, _Pins(name=name, type="clock", num_pins=num_pins))
+            pb._add_pins(name, _Pins(pb, name=name, type="clock", num_pins=num_pins))
             self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        self.root.append(getattr(self, name).get_xml_node())
+        setattr(self, name, [getattr(pb, name) for pb in self._pb_nodes])
 
-#MARK: TODO HERE
-#lz TODO need to do add_mode and the connections between pbs. Check VTR arch xml: do pbs connect to anything above them. 
+        self._root.append(getattr(self, name).get_xml_node())
 
+
+#lz TODO add mode to graph
     def add_mode(self, mode: Mode):
-        if mode.name in self._modes:
+        if len(self._contents) > 0:
+            raise ValueError("Modes can only be added to complex blocks with no blocks")
+
+        if mode in self._modes:
             raise ValueError("Mode with this name already exists")
-        if "default" in self._modes:
-            raise ValueError("Cannot add modes to complex block with default mode")
 
-        self._modes[mode.name] = mode
+        self._modes.append(mode)
 
-        self.root.append(mode.to_elem())
+        self._root.append(mode.to_elem())
 
-        self._graph.add_nodes_from(mode.get_graph().nodes)
-        self._graph.add_edges_from(mode.get_graph().edges)
+        #self._graph.add_nodes_from(mode.get_graph().nodes)
+        #self._graph.add_edges_from(mode.get_graph().edges)
+
     
+
     def add_direct_connection(self,
-                            input_list: list[str], 
-                            output_list: list[str],
+                            inputs: _PinList | _Pins | list[_Pins], 
+                            outputs: _PinList | _Pins | list[_Pins],
                             name: Optional[str] = None):
+        if len(self._modes) > 0:
+            raise ValueError("Connections can only be added to complex blocks with no modes")
+
         if name == None:
             name = "direct" + str(self.num_dc)
             self.num_dc += 1
+        
+        full_inputs = []
 
-        # if len(input_list) != len(output_list):
-        #     raise ValueError("Direct connections must map 1:1 between inputs and outputs")
-
-        elems = {"name": name}
-
-        if len(input_list) == 1:
-            elems["input"] = input_list[0]
-            elems["output"] = output_list[0]
+        if not isinstance(inputs, (_PinList, _Pins)):
+            for inp in inputs:
+                full_inputs.extend(inp)
         else:
-            elems["input"] = " ".join(input_list)
-            elems["output"] = " ".join(output_list)
+            full_inputs = inputs
 
-        ET.SubElement(self._interconnect, "direct", elems)
+        full_outputs = []
 
+        if not isinstance(outputs, (_PinList, _Pins)):
+            for out in outputs:
+                full_outputs.extend(out)
+        else:
+            full_outputs = outputs
+
+        self._graph.add_edges_from(zip(full_inputs, full_outputs))
+
+        print(full_inputs, full_outputs)
+
+        for ipin, opin in zip(full_inputs, full_outputs):
+            elems = {
+                "name": name,
+                "input": ipin.nodeName,
+                "output": opin.nodeName
+            }
+            ET.SubElement(self._interconnect, "direct", elems)
+        #self._graph.add_edges_from((inp, out) for inp in inputs for out in outputs)
 
     #lz TODO need to graph this somehow (oh wait we use the individual get methods from pin)
     def add_complete_connection(self,
-                                inputs: list[str],
-                                outputs: list[str],
+                                inputs: list[_PinList | _Pins],
+                                outputs: list[_PinList | _Pins],
                                 name: Optional[str] = None):
         
         if name == None:
             name = "complete" + str(self.num_cc)
             self.num_cc += 1
         
+        elems = {
+            "name": name,
+            "input": " ".join(str(x) for x in inputs),
+            "output": " ".join(str(x) for x in outputs)
+        }
+        ET.SubElement(self._interconnect, "complete", elems)
+
         self._graph.add_node(name)
-        input_string_list = []
-        output_string_list = []
-
-        # for pin_list in inputs:
-        #     if len(pin_list) == 1:
-        #         input_string_list.append(pin_list[0])
-        #     else:
-        #         input_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
-
-        #     for pin in pin_list:
-        #         self._graph.add_edge(name, pin)
-
-        # for pin_list in outputs:
-        #     if len(pin_list) == 1:
-        #         output_string_list.append(pin_list[0])
-        #     else:
-        #         output_string_list.append(pin_list[0][:-1] + ":" + str(int(pin_list[0][-2]) + len(pin_list) - 1) + "]")
-
-        #     for pin in pin_list:
-        #         self._graph.add_edge(name, pin)
-
-        ET.SubElement(self._interconnect, "complete", {"name": name, "input": " ".join(inputs), "output": " ".join(outputs)})
+        self._graph.add_edges_from((inp, name) for inp in inputs)
+        self._graph.add_edges_from((name, out) for out in outputs)
 
     def add_mux_connection(self,
-                           input_list: list[str],
+                           inputs: list[str],
                            output: str,
                            name: Optional[str] = None):
         if name == None:
             name = "mux" + str(self.num_mux)
             self.num_mux += 1
 
-        # self._graph.add_node(name)
-        # self._graph.add_edge(name, output)
-
-        # for pin in input_list:
-        #     self._graph.add_edge(name, pin)
-
-        elems = {"name": name, "input": " ".join(input_list), "output": output}
-
-        # if len(input_list) == 1:
-        #     elems["input"] = input_list[0]
-        # else:
-        #     elems["input"] = input_list[0][:-1] + ":" + str(int(input_list[0][-2]) + len(input_list) - 1) + "]"
-
+        elems = {
+            "name": name,
+            "input": " ".join(str(x) for x in inputs),
+            "output": str(output)
+        }
         ET.SubElement(self._interconnect, "mux", elems)
+        
+        self._graph.add_node(name)
+        self._graph.add_edges_from((inp, name) for inp in inputs)
+        self._graph.add_edge(name, output)
+
+    def get_graph(self):
+        return self._graph
+    
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            if index.start is None or index.stop is None:
+                raise IndexError("Slice must have both start and stop defined")
+            if index.start < 0 or index.stop < 0:
+                raise IndexError("Negative indices are not supported")
+            if index.step is not None:
+                raise IndexError("Slice step is not supported")
+            if index.start > index.stop:
+                start = index.start
+                stop = index.stop - 1 if index.stop != 0 else None
+                step = -1
+            else:
+                start = index.start
+                stop = index.stop + 1
+                step = 1
+            return self._pb_nodes[start:stop:step]
+        return self._pb_nodes[index]

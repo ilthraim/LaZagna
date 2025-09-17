@@ -1,5 +1,7 @@
 from vtr_arch_builder import Arch, Model, Switch, Segment, Tile, SubTile
 from vtr_arch_builder import ComplexBlock, Primitive, Mode
+import networkx as nx
+import matplotlib.pyplot as plt
 
 
 #MARK: Example Usage
@@ -54,51 +56,36 @@ arch.add_segment(l4Segment)
 
 ########### GRAPH TEST ##############
 
+lut6 = Primitive(name="lut6", type="lut6", num_pb=2)
+ff = Primitive(name="ff", type="ff", num_pb=1)
 
-clb = ComplexBlock(name="clb")
-clb.add_input(name="I", num_pins=40,equivalence="full")
-clb.add_output(name="O", num_pins=10)
-clb.add_clock(name="clk", num_pins=1)
+ble6 = ComplexBlock(name="ble6", num_pb=2)
+ble6.add_input(name="input", num_pins=6)
+# ble6.add_output(name="output", num_pins=1)
+# ble6.add_clock(name="clock", num_pins=1)
 
-fle = ComplexBlock(name="fle", num_pb=10)
-fle.add_input(name="in", num_pins=6)
-fle.add_output(name="out", num_pins=1)
-fle.add_clock(name="clk", num_pins=1)
-
-n1_lut6 = Mode(name="n1_lut6")
-ble6 = ComplexBlock(name="ble6", num_pb=1)
-ble6.add_input(name="in", num_pins=6)
-ble6.add_output(name="out", num_pins=1) 
-ble6.add_clock(name="clk", num_pins=1)
-lut6 = Primitive(name="lut6", type="lut6")
-ff = Primitive(name="ff", type="ff")
 ble6.add_block(lut6)
 ble6.add_block(ff)
+#ble6.add_direct_connection(inputs=[ble6.input], outputs=[lut6.input]) # type: ignore
+ble6.add_direct_connection(inputs=ble6.input, outputs=lut6[0:1].input[0:5])
 
-ble6.add_direct_connection([ble6.pins("in")], [lut6.pins("in")])
-ble6.add_direct_connection([lut6.pins("out")], [ff.pins("D")])
-ble6.add_direct_connection([ble6.pins("clk")], [ff.pins("clock")])
-ble6.add_mux_connection([ff.pins("Q"), lut6.pins("out")], ble6.pins("out"))
+print(ble6.input[0:2]) # type: ignore
 
-n1_lut6.add_block(ble6)
-
-fle.add_mode(n1_lut6)
-
-n1_lut6.add_direct_connection([fle.pins("in")], [ble6.pins("in")])
-
-clb.add_block(fle)
-
-arch.add_pb(clb)
+arch.add_pb(ble6)
 
 #lz TODO Should connections take place inside mode actually?
 #lz TODO actually I was going to change the clb logic to be mode and the mode to be clb and that way everything works out and a clb cant have modes and blocks
 
-# nx.draw(io.get_graph(), with_labels=True)
-# plt.savefig("testgraph.png")
+labels = {node:node.nodeName for node in ble6.get_graph().nodes()}
+nx.draw(ble6.get_graph(),labels=labels, with_labels=True)
+plt.savefig("testgraph.png")
+
+# nx.draw(lut6.get_graph(), with_labels=True)
+# plt.savefig("testgraph_lut6.png")
 
 ############ PRINT ###################
 
 arch.save("my_arch.xml")
-print(arch.to_string()[:4000]) 
+print(arch.to_string()) 
 
         

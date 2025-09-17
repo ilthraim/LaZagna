@@ -1,25 +1,23 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
-import networkx as nx
-import matplotlib.pyplot as plt
-import re
 from xml.dom import minidom
-from typing import Optional, Dict, List, Literal
+from typing import TYPE_CHECKING, Optional, Dict, List, Literal
 
 from .vtr_utils import _Node
-from .vtr_blocks import ComplexBlock
+if TYPE_CHECKING:
+    from .vtr_blocks import ComplexBlock
 
 #MARK: Arch
 class Arch(_Node):
     def __init__(self):
-        self.root = ET.Element("architecture")
-        self._models = ET.SubElement(self.root, "models")
-        self._tiles = ET.SubElement(self.root, "tiles")
-        self._layout = ET.SubElement(self.root, "layout")
-        self._device = ET.SubElement(self.root, "device")
-        self._switchlist = ET.SubElement(self.root, "switchlist")
-        self._segmentlist = ET.SubElement(self.root, "segmentlist")
-        self._complexblocklist = ET.SubElement(self.root, "complexblocklist")
+        self._root = ET.Element("architecture")
+        self._models = ET.SubElement(self._root, "models")
+        self._tiles = ET.SubElement(self._root, "tiles")
+        self._layout = ET.SubElement(self._root, "layout")
+        self._device = ET.SubElement(self._root, "device")
+        self._switchlist = ET.SubElement(self._root, "switchlist")
+        self._segmentlist = ET.SubElement(self._root, "segmentlist")
+        self._complexblocklist = ET.SubElement(self._root, "complexblocklist")
 
         self.switches: dict[str, Switch] = {}
         self.segments: dict[str, Segment] = {}
@@ -53,7 +51,7 @@ class Arch(_Node):
         self._complexblocklist.append(pb.to_elem())
 
     def to_string(self, indent: str = "  ") -> str:
-        rough = ET.tostring(self.root, encoding="utf-8")
+        rough = ET.tostring(self._root, encoding="utf-8")
         return minidom.parseString(rough).toprettyxml(indent=indent)
 
     def save(self, filename: str):
@@ -78,7 +76,7 @@ class Arch(_Node):
             raise ValueError("Channel distribution must be gaussian, uniform, pulse, or delta")
 
         if not hasattr(self, "_cwd"):
-            self._cwd = ET.SubElement(self.root, "chan_width_distr")
+            self._cwd = ET.SubElement(self._root, "chan_width_distr")
 
         elems = {"distr": distr, "peak": peak}
 
@@ -106,7 +104,7 @@ class Arch(_Node):
             raise ValueError("Channel distribution must be gaussian, uniform, pulse, or delta")
 
         if not hasattr(self, "_cwd"):
-            self._cwd = ET.SubElement(self.root, "chan_width_distr")
+            self._cwd = ET.SubElement(self._root, "chan_width_distr")
 
         elems = {"distr": distr, "peak": peak}
 
@@ -158,12 +156,12 @@ class Arch(_Node):
 class Model(_Node):
     def __init__(self, name: str, prune: str = "false"):
         self.name = name
-        self.root = ET.Element("model", {"name": name, "never_prune": prune})
+        self._root = ET.Element("model", {"name": name, "never_prune": prune})
         self.inputs: Dict[str, int] = {}
         self.outputs: Dict[str, int] = {}
         self.clocks: Dict[str, int] = {}
-        self._inputs = ET.SubElement(self.root, "input_ports")
-        self._outputs = ET.SubElement(self.root, "output_ports")
+        self._inputs = ET.SubElement(self._root, "input_ports")
+        self._outputs = ET.SubElement(self._root, "output_ports")
 
     def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None, comb_ports: Optional[tuple] = None):
         elems = {"name": name, "is_clock": "1" if is_clock else "0"}
@@ -193,36 +191,36 @@ class Model(_Node):
 class Tile(_Node):
     def __init__(self, name: str, width: str = "1", height: str = "1", area: Optional[str] = None):
         if area != None:
-            self.root = ET.Element("tile", {"name": name, "width": width, "height": height, "area":area})
+            self._root = ET.Element("tile", {"name": name, "width": width, "height": height, "area":area})
         else:
-            self.root = ET.Element("tile", {"name": name, "width": width, "height": height})
+            self._root = ET.Element("tile", {"name": name, "width": width, "height": height})
 
     def add_sub_tile(self, subTile: SubTile):
-        self.root.append(subTile.to_elem())
+        self._root.append(subTile.to_elem())
 
 #MARK: SubTile
 class SubTile(_Node):
     def __init__(self, name: str, capacity: str = "1"):
-        self.root = ET.Element("sub_tile", {"name": name, "capacity": capacity})
+        self._root = ET.Element("sub_tile", {"name": name, "capacity": capacity})
 
     #lz I bet we can get inputs and outputs from the equivalent sites
 
     def add_input(self, name: str, num_pins: str, equivalent: str = "none", is_global: Optional[str] = None):
         if is_global != None:
-            ET.SubElement(self.root, "input", {"name": name, "num_pins": num_pins, "equivalent": equivalent, "is_non_clock_global": is_global})
+            ET.SubElement(self._root, "input", {"name": name, "num_pins": num_pins, "equivalent": equivalent, "is_non_clock_global": is_global})
         else:
-            ET.SubElement(self.root, "input", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
+            ET.SubElement(self._root, "input", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
 
     def add_output(self, name: str, num_pins: str, equivalent: str = "none"):
-        ET.SubElement(self.root, "output", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
+        ET.SubElement(self._root, "output", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
 
     def add_clock(self, name: str, num_pins: str, equivalent: str = "none"):
-        ET.SubElement(self.root, "clock", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
+        ET.SubElement(self._root, "clock", {"name": name, "num_pins": num_pins, "equivalent": equivalent})
 
     #lz TODO add equivalent sites - should be able to snag em from the complex blocks list
 
     def set_fc(self, in_type: str, in_val: str, out_type: str, out_val: str):
-        ET.SubElement(self.root, "fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val":out_val})
+        ET.SubElement(self._root, "fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val":out_val})
 
     #lz TODO add pin locations - come from block list too?
 
@@ -267,10 +265,10 @@ class Switch(_Node):
         if power_buf_size != None:
             elems["power_buf_size"] = power_buf_size
 
-        self.root = ET.Element("switch", elems)
+        self._root = ET.Element("switch", elems)
 
     def add_tdel(self, num_inputs: str, delay: str):
-        ET.SubElement(self.root, "Tdel", {"num_inputs": num_inputs, "delay": delay})
+        ET.SubElement(self._root, "Tdel", {"num_inputs": num_inputs, "delay": delay})
 
 #MARK: Segment
 class Segment(_Node):
@@ -303,7 +301,7 @@ class Segment(_Node):
 
         self.name = name
         self.type = type
-        self.root = ET.Element("segment", elems)
+        self._root = ET.Element("segment", elems)
         self.switch_mux: Switch
         self.switch_mux_inc: Switch
         self.switch_mux_dec: Switch
@@ -317,7 +315,7 @@ class Segment(_Node):
         if not all(x in (0, 1) for x in pattern):
             raise ValueError("Switch block pattern can only contain 1 and 0")
         
-        ET.SubElement(self.root, "sb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
+        ET.SubElement(self._root, "sb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
 
     def connection_block_pattern(self, pattern: List[int]):
         if self.length == 0:
@@ -326,19 +324,19 @@ class Segment(_Node):
             raise ValueError("Connection block pattern must have length of segment")
         if not all(x in (0, 1) for x in pattern):
             raise ValueError("Connection block pattern can only contain 1 and 0")
-        
-        ET.SubElement(self.root, "cb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
+
+        ET.SubElement(self._root, "cb", {"type": "pattern"}).text = " ".join(str(x) for x in pattern)
 
     def mux(self, switch: Switch):
         if self.type != "unidir":
             raise ValueError("Mux can only be defined for segments of type unidir")
         if switch.type != "mux":
             raise ValueError("Provided switch must be of type mux")
-        if self.root.find("mux_inc") != None:
+        if self._root.find("mux_inc") != None:
             raise ValueError("Mux cannot be defined alonside mux_inc/dec tag")
 
         self.switch_mux = switch
-        ET.SubElement(self.root, "mux", {"name": switch.name})
+        ET.SubElement(self._root, "mux", {"name": switch.name})
 
     def mux_inc_dec(self, switch_inc: Switch, switch_dec: Switch):
         if self.type != "unidir":
@@ -347,13 +345,13 @@ class Segment(_Node):
             raise ValueError("Provided switch must be of type mux")
         if switch_dec.type != "mux":
             raise ValueError("Provided switch must be of type mux")
-        if self.root.find("mux") != None:
+        if self._root.find("mux") != None:
             raise ValueError("Inc/Dec mux cannot be defined alonside mux tag")
         
         self.switch_mux_inc = switch_inc
         self.switch_mux_dec = switch_dec
-        ET.SubElement(self.root, "mux_inc", {"name": switch_inc.name})
-        ET.SubElement(self.root, "mux_dec", {"name": switch_dec.name})
+        ET.SubElement(self._root, "mux_inc", {"name": switch_inc.name})
+        ET.SubElement(self._root, "mux_dec", {"name": switch_dec.name})
 
     def mux_inter_die(self, switch: Switch):
         if self.type != "unidir":
@@ -362,20 +360,20 @@ class Segment(_Node):
             raise ValueError("Provided switch must be of type mux")
         
         self.switch_mux_inter_die = switch
-        ET.SubElement(self.root, "mux_inter_die", {"name": switch.name})
+        ET.SubElement(self._root, "mux_inter_die", {"name": switch.name})
 
     def wire_switch(self, switch: Switch):
         if self.type != "bidir":
             raise ValueError("Wire_switch can only be defined for segments of type bidir")
         if not switch.type in ["tristate", "pass_gate"]:
             raise ValueError("Provided switch must be of type tristate or pass_gate")
-        
-        ET.SubElement(self.root, "wire_switch", {"name": switch.name})
+
+        ET.SubElement(self._root, "wire_switch", {"name": switch.name})
 
     def opin_switch(self, switch: Switch):
         if self.type != "bidir":
             raise ValueError("Opin_switch can only be defined for segments of type bidir")
         if not switch.type in ["tristate", "pass_gate"]:
             raise ValueError("Provided switch must be of type tristate or pass_gate")
-        
-        ET.SubElement(self.root, "opin_switch", {"name": switch.name})
+
+        ET.SubElement(self._root, "opin_switch", {"name": switch.name})

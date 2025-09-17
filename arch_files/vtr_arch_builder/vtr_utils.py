@@ -1,38 +1,42 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
 from dataclasses import dataclass
-from .vtr_blocks import Primitive, ComplexBlock
 
+if TYPE_CHECKING:
+    from .vtr_blocks import _ComplexBlock_Node, _Primitive_Node
 
 #MARK: Base Classes
 class _Node:
     def __init__(self):
-        self.root = ET.Element("")
+        self._root = ET.Element("")
 
     def to_elem(self) -> ET.Element:
-        return self.root
+        return self._root
 
-@dataclass(frozen=True)
 class _Pin():
-    pins: _Pins
-    index: int
+    def __init__(self, pins: _Pins, index: int, parent: _ComplexBlock_Node | _Primitive_Node):
+        self.pins = pins
+        self.index = index
+        self.parent = parent
+        self.nodeName = f"{self.parent.nodeName}.{self.pins._name}[{self.index}]"
 
-    def __str__(self) -> str:
-        return f"{self.pins._name}[{self.index}]"
+    # def __str__(self) -> str:
+    #     return f"{self.pins._name}[{self.index}]"
     
-    def __repr__(self) -> str:
-        return f"_Pin({self.pins._name}[{self.index}])"
+    # def __repr__(self) -> str:
+    #     return f"_Pin({self.pins._name}[{self.index}])"
 
 class _PinList(list):
     def __init__(self, pins: list[_Pin]):
         super().__init__(pins)
 
-    def __str__(self) -> str:
-        return f"{self[0].pins._name}[{self[0].index}:{self[-1].index}]"
+    # def __str__(self) -> str:
+    #     return f"{self[0].pins._name}[{self[0].index}:{self[-1].index}]"
 
 class _Pins():
     def __init__(self,
+                 parent: _ComplexBlock_Node | _Primitive_Node,
                  name: str,
                  type: Literal["input", "output", "clock"], 
                  num_pins: int = 1,
@@ -46,7 +50,7 @@ class _Pins():
         self._type = type
         self._equivalence = equivalence
         self._num_pins = num_pins
-        self._pins = [_Pin(self, i) for i in range(num_pins)]
+        self._pins = [_Pin(self, i, parent) for i in range(num_pins)]
 
         if is_non_clock_global:
             self._is_non_clock_global = is_non_clock_global
@@ -68,7 +72,7 @@ class _Pins():
                 stop = index.stop + 1
                 step = 1
             return _PinList(self._pins[start:stop:step])
-        return self._pins[index]
+        return _PinList(self._pins[index])
 
     def __setitem__(self, index, value):
         pass
@@ -94,5 +98,5 @@ class _Pins():
         else:
             return f"{self._name}[0:{self._num_pins-1}]"
     
-    def __repr__(self) -> str:
-        return f"_Pins(name='{self._name}', type='{self._type}', num_pins={self._num_pins})"
+    # def __repr__(self) -> str:
+    #     return f"_Pins(name='{self._name}', type='{self._type}', num_pins={self._num_pins})"
