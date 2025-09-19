@@ -34,6 +34,35 @@ class _PinList(list):
     # def __str__(self) -> str:
     #     return f"{self[0].pins._name}[{self[0].index}:{self[-1].index}]"
 
+class _MultiBlock_Pins_Helper(list):
+    def __init__(self, pins_list: list[_Pins]):
+        self._pins_list = pins_list
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            if index.start is None or index.stop is None:
+                raise IndexError("Slice must have both start and stop defined")
+            if index.start < 0 or index.stop < 0:
+                raise IndexError("Negative indices are not supported")
+            if index.step is not None:
+                raise IndexError("Slice step is not supported")
+            if index.start > index.stop:
+                start = index.start
+                stop = index.stop
+            else:
+                start = index.start
+                stop = index.stop
+
+            ret_list = []
+            for pins in self._pins_list:
+                ret_list.extend(pins[start:stop])
+            return _PinList(ret_list)
+        
+        ret_list = []
+        for pins in self._pins_list:
+            ret_list.append(pins[index])
+        return _PinList(ret_list)
+
 class _Pins():
     def __init__(self,
                  parent: _ComplexBlock_Node | _Primitive_Node,

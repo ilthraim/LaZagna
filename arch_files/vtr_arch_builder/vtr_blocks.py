@@ -3,7 +3,7 @@ import keyword
 import networkx as nx
 from typing import TYPE_CHECKING, Optional, List, Literal
 import xml.etree.ElementTree as ET
-from .vtr_utils import _Node, _PinList, _Pins, _Pin
+from .vtr_utils import _Node, _PinList, _Pins, _Pin, _MultiBlock_Pins_Helper
 
 if TYPE_CHECKING:
     from .vtr_core import Model
@@ -105,6 +105,44 @@ class _Primitive_Node():
     def _add_pins(self, name: str, pins: _Pins):
         setattr(self, name, pins)
 
+class _Primitive_Node_Helper(list):
+    def __init__(self, parent: Primitive, pinlist: list[_Pins], name: str):
+        super().__init__(pinlist)
+        self._parent = parent
+        self._name = name
+
+    def __getitem__(self, index):
+        return_list = []
+        if isinstance(index, slice):
+            if index.start is None or index.stop is None:
+                raise IndexError("Slice must have both start and stop defined")
+            if index.start < 0 or index.stop < 0:
+                raise IndexError("Negative indices are not supported")
+            if index.step is not None:
+                raise IndexError("Slice step is not supported")
+            if index.start > index.stop:
+                raise IndexError("Slice step is not supported")
+            else:
+                start = index.start
+                #stop = index.stop + 1
+                stop = index.stop
+            for prim in self._parent._primitive_nodes:
+                return_list.append(getattr(prim, self._name)[start:stop]) # type: ignore
+            return return_list
+
+        for prim in self._parent._primitive_nodes:
+            return_list.append(getattr(prim, self._name)[index]) # type: ignore
+        return return_list
+
+class _Primitive_Node_Slice_Helper():
+    def __init__(self, parent: Primitive, start: int, stop: int):
+        self._parent = parent
+        self._start = start
+        self._stop = stop
+
+    def __getattr__(self, name):
+        return _MultiBlock_Pins_Helper([getattr(node, name) for node in self._parent._primitive_nodes[self._start:self._stop]])
+
 class Primitive(_Node):
     #options for primitive model are input, output, lut4-6, ff, memory, or custom
     def __init__(self,
@@ -149,25 +187,6 @@ class Primitive(_Node):
 
         self._root.attrib.update(self._elems)
 
-    def __getitem__(self, index):
-        if isinstance(index, slice):
-            if index.start is None or index.stop is None:
-                raise IndexError("Slice must have both start and stop defined")
-            if index.start < 0 or index.stop < 0:
-                raise IndexError("Negative indices are not supported")
-            if index.step is not None:
-                raise IndexError("Slice step is not supported")
-            if index.start > index.stop:
-                start = index.start
-                stop = index.stop - 1 if index.stop != 0 else None
-                step = -1
-            else:
-                start = index.start
-                stop = index.stop + 1
-                step = 1
-            return self._primitive_nodes[start:stop:step]
-        return self._primitive_nodes[index]
-
     def _input(self, num_pb: int = 1):
         self._elems["blif_model"] = ".input"
 
@@ -209,6 +228,9 @@ class Primitive(_Node):
             self._add_clock(name=port_name, num_pins=value)
 
     def _add_input(self, name: str, num_pins: int, port_class: Optional[str] = None):
+        if keyword.iskeyword(name):
+            raise ValueError("Pin name cannot be a reserved keyword: " + name)
+        
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this primitive")
 
@@ -217,7 +239,7 @@ class Primitive(_Node):
             self._graph.add_nodes_from(getattr(prim_node, name)._pins)
             self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
 
-        setattr(self, name, [getattr(prim_node, name) for prim_node in self._primitive_nodes])
+        setattr(self, name, _Primitive_Node_Helper(self, [getattr(prim_node, name) for prim_node in self._primitive_nodes], name=name))
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
@@ -258,6 +280,25 @@ class Primitive(_Node):
 
     def get_graph(self):
         return self._graph
+    
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            if index.start is None or index.stop is None:
+                raise IndexError("Slice must have both start and stop defined")
+            if index.start < 0 or index.stop < 0:
+                raise IndexError("Negative indices are not supported")
+            if index.step is not None:
+                raise IndexError("Slice step is not supported")
+            if index.start > index.stop:
+                start = index.start
+                stop = index.stop - 1 if index.stop != 0 else self._num_pb
+                step = -1
+            else:
+                start = index.start
+                stop = index.stop + 1
+                step = 1
+            return _Primitive_Node_Slice_Helper(self, start, stop)
+        return self._primitive_nodes[index]
        
 #MARK: ComplexBlock
 class _ComplexBlock_Node():
@@ -288,7 +329,8 @@ class _ComplexBlock_Node_Helper(list):
                 raise IndexError("Slice step is not supported")
             else:
                 start = index.start
-                stop = index.stop + 1
+                #stop = index.stop + 1
+                stop = index.stop
             for pb in self._parent._pb_nodes:
                 return_list.append(getattr(pb, self._name)[start:stop]) # type: ignore
             return return_list
@@ -304,7 +346,7 @@ class _ComplexBlock_Node_Slice_Helper():
         self._stop = stop
 
     def __getattr__(self, name):
-        return [getattr(pb, name) for pb in self._parent._pb_nodes[self._start:self._stop]]
+        return _MultiBlock_Pins_Helper([getattr(pb, name) for pb in self._parent._pb_nodes[self._start:self._stop]])
 
 class ComplexBlock(_Node):
     def __init__(self, name: str, num_pb:int = 1):
@@ -337,8 +379,6 @@ class ComplexBlock(_Node):
 
         if hasattr(self, name):
             raise ValueError("Pin with name " + name + " already exists in this complex block")
-
-        #setattr(self, name, _Pins(name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
 
         for pb in self._pb_nodes:
             pb._add_pins(name, _Pins(pb, name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
@@ -424,9 +464,10 @@ class ComplexBlock(_Node):
         else:
             full_outputs = outputs
 
-        self._graph.add_edges_from(zip(full_inputs, full_outputs))
+        if len(full_inputs) != len(full_outputs):
+            raise ValueError("Number of input pins must match number of output pins for direct connection : " + str(len(full_inputs)) + " != " + str(len(full_outputs)))
 
-        print(full_inputs, full_outputs)
+        self._graph.add_edges_from(zip(full_inputs, full_outputs))
 
         for ipin, opin in zip(full_inputs, full_outputs):
             elems = {

@@ -56,10 +56,10 @@ arch.add_segment(l4Segment)
 
 ########### GRAPH TEST ##############
 
-lut6 = Primitive(name="lut6", type="lut6", num_pb=2)
+lut6 = Primitive(name="lut6", type="lut6", num_pb=3)
 ff = Primitive(name="ff", type="ff", num_pb=1)
 
-ble6 = ComplexBlock(name="ble6", num_pb=2)
+ble6 = ComplexBlock(name="ble6", num_pb=3)
 ble6.add_input(name="input", num_pins=6)
 # ble6.add_output(name="output", num_pins=1)
 # ble6.add_clock(name="clock", num_pins=1)
@@ -67,9 +67,7 @@ ble6.add_input(name="input", num_pins=6)
 ble6.add_block(lut6)
 ble6.add_block(ff)
 #ble6.add_direct_connection(inputs=[ble6.input], outputs=[lut6.input]) # type: ignore
-ble6.add_direct_connection(inputs=ble6[0:1].input, outputs=lut6.input[0:5])
-
-print(ble6.input[0:2]) # type: ignore
+ble6.add_direct_connection(inputs=ble6.input[0:3], outputs=lut6.input[0:3])
 
 arch.add_pb(ble6)
 
