@@ -153,6 +153,7 @@ class Primitive(_Node):
                  ):
         self._name = name
         self._primitive_nodes = [_Primitive_Node(self, i) for i in range(num_pb)]
+        self._dynamic_attrs = {}  # Store dynamically added attributes
 
         self._graph = nx.Graph()
         self._graph.add_nodes_from(self._primitive_nodes)
@@ -186,6 +187,12 @@ class Primitive(_Node):
                 self._custom(blif_model)
 
         self._root.attrib.update(self._elems)
+    
+    def __getattr__(self, name: str):
+        """Handle dynamically added pin attributes"""
+        if name in self._dynamic_attrs:
+            return self._dynamic_attrs[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def _input(self, num_pb: int = 1):
         self._elems["blif_model"] = ".input"
@@ -239,7 +246,9 @@ class Primitive(_Node):
             self._graph.add_nodes_from(getattr(prim_node, name)._pins)
             self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
 
-        setattr(self, name, _Primitive_Node_Helper(self, [getattr(prim_node, name) for prim_node in self._primitive_nodes], name=name))
+        pin_helper = _Primitive_Node_Helper(self, [getattr(prim_node, name) for prim_node in self._primitive_nodes], name=name)
+        setattr(self, name, pin_helper)
+        self._dynamic_attrs[name] = pin_helper
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
@@ -255,7 +264,9 @@ class Primitive(_Node):
             self._graph.add_nodes_from(getattr(prim_node, name)._pins)
             self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
 
-        setattr(self, name, [getattr(prim_node, name) for prim_node in self._primitive_nodes])
+        pin_helper = [getattr(prim_node, name) for prim_node in self._primitive_nodes]
+        setattr(self, name, pin_helper)
+        self._dynamic_attrs[name] = pin_helper
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
@@ -271,7 +282,9 @@ class Primitive(_Node):
             self._graph.add_nodes_from(getattr(prim_node, name)._pins)
             self._graph.add_edges_from(zip([prim_node] * num_pins, getattr(prim_node, name)._pins))
 
-        setattr(self, name, [getattr(prim_node, name) for prim_node in self._primitive_nodes])
+        pin_helper = [getattr(prim_node, name) for prim_node in self._primitive_nodes]
+        setattr(self, name, pin_helper)
+        self._dynamic_attrs[name] = pin_helper
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
@@ -360,8 +373,15 @@ class ComplexBlock(_Node):
         self.num_dc = 0
         self.num_cc = 0
         self.num_mux = 0
+        self._dynamic_attrs = {}  # Store dynamically added attributes
 
         self._pb_nodes = [_ComplexBlock_Node(self, i) for i in range(num_pb)]
+    
+    def __getattr__(self, name: str):
+        """Handle dynamically added pin attributes"""
+        if name in self._dynamic_attrs:
+            return self._dynamic_attrs[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def add_block(self, block: ComplexBlock | Primitive):
         if len(self._modes) > 0:
@@ -384,7 +404,9 @@ class ComplexBlock(_Node):
             pb._add_pins(name, _Pins(pb, name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global))
             self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        setattr(self, name, _ComplexBlock_Node_Helper(self, [getattr(pb, name) for pb in self._pb_nodes], name))
+        pin_helper = _ComplexBlock_Node_Helper(self, [getattr(pb, name) for pb in self._pb_nodes], name)
+        setattr(self, name, pin_helper)
+        self._dynamic_attrs[name] = pin_helper
 
         #lz TODO gotta make the parent tag optional
         self._root.append(_Pins(self._pb_nodes[0], name=name, type="input", num_pins=num_pins, equivalence=equivalence, is_non_clock_global=is_non_clock_global).get_xml_node())
@@ -400,7 +422,9 @@ class ComplexBlock(_Node):
             pb._add_pins(name, _Pins(pb, name=name, type="output", num_pins=num_pins))
             self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        setattr(self, name, [getattr(pb, name) for pb in self._pb_nodes])
+        pin_helper = [getattr(pb, name) for pb in self._pb_nodes]
+        setattr(self, name, pin_helper)
+        self._dynamic_attrs[name] = pin_helper
 
         self._root.append(getattr(self, name).get_xml_node())
 
@@ -415,7 +439,9 @@ class ComplexBlock(_Node):
             pb._add_pins(name, _Pins(pb, name=name, type="clock", num_pins=num_pins))
             self._graph.add_nodes_from(getattr(pb, name)._pins)
 
-        setattr(self, name, [getattr(pb, name) for pb in self._pb_nodes])
+        pin_helper = [getattr(pb, name) for pb in self._pb_nodes]
+        setattr(self, name, pin_helper)
+        self._dynamic_attrs[name] = pin_helper
 
         self._root.append(getattr(self, name).get_xml_node())
 
