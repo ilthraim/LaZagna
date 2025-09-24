@@ -19,20 +19,15 @@ class _Pin():
         self.pins = pins
         self.index = index
         self.parent = parent
-        self.nodeName = f"{self.parent.nodeName}.{self.pins._name}[{self.index}]"
-
-    # def __str__(self) -> str:
-    #     return f"{self.pins._name}[{self.index}]"
-    
-    # def __repr__(self) -> str:
-    #     return f"_Pin({self.pins._name}[{self.index}])"
+        self.node_name = f"{self.parent.node_name}.{self.pins._name}[{self.index}]"
 
 class _PinList(list):
-    def __init__(self, pins: list[_Pin]):
+    def __init__(self, pins: list[_Pin], str_rep: str=""):
         super().__init__(pins)
+        self._str_rep = str_rep
 
-    # def __str__(self) -> str:
-    #     return f"{self[0].pins._name}[{self[0].index}:{self[-1].index}]"
+    def _xml_list(self) -> str:
+        return self._str_rep
 
 class _MultiBlock_Pins_Helper(list):
     def __init__(self, pins_list: list[_Pins]):
@@ -75,6 +70,7 @@ class _Pins():
             raise ValueError("Equivalence of instance is only valid for output pins")
         if is_non_clock_global and type != "input":
             raise ValueError("is_non_clock_global is only valid for input pins")
+        self._parent = parent
         self._name = name
         self._type = type
         self._equivalence = equivalence
@@ -94,14 +90,14 @@ class _Pins():
                 raise IndexError("Slice step is not supported")
             if index.start > index.stop:
                 start = index.start
-                stop = index.stop - 1 if index.stop != 0 else None
+                stop = index.stop - 1 if index.stop != 0 else 0
                 step = -1
             else:
                 start = index.start
                 stop = index.stop + 1
                 step = 1
-            return _PinList(self._pins[start:stop:step])
-        return _PinList(self._pins[index])
+            return _PinList(self._pins[start:stop:step], f"{self._parent.node_name}.{self._name}[{str(start)}:{str(stop - 1)}]")
+        return _PinList(self._pins[index], f"{self._parent.node_name}.{self._name}[{str(index)}]")
 
     def __setitem__(self, index, value):
         pass
@@ -123,9 +119,7 @@ class _Pins():
     def __str__(self) -> str:
         """Return VTR-style pin specification for all pins"""
         if self._num_pins == 1:
-            return f"{self._name}[0]"
+            return f"{self._parent.node_name}.{self._name}[0]"
         else:
-            return f"{self._name}[0:{self._num_pins-1}]"
+            return f"{self._parent.node_name}.{self._name}[0:{self._num_pins-1}]"
     
-    # def __repr__(self) -> str:
-    #     return f"_Pins(name='{self._name}', type='{self._type}', num_pins={self._num_pins})"
