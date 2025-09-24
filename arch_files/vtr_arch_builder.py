@@ -68,23 +68,25 @@ ble6.add_clock(name="clock", num_pins=1)
 
 ble6.add_block(lut6)
 ble6.add_block(ff)
-ble6.add_direct_connection(inputs=ble6.input, outputs=lut6.input)
-ble6.add_direct_connection(inputs=lut6.output, outputs=ff.D)
-ble6.add_direct_connection(inputs=ble6.clock, outputs=ff.clock)
-ble6.add_mux_connection(inputs=[ff.Q, lut6.output], outputs=ble6.output)
+ble6.add_direct_connection(inputs=["ble6.input"], outputs=["lut6.input"])
+ble6.add_direct_connection(inputs=["lut6.output"], outputs=["ff.D"])
+ble6.add_direct_connection(inputs=["ble6.clock"], outputs=["ff.clock"])
+ble6.add_mux_connection(inputs=["ff.Q", "lut6.output"], outputs="ble6.output")
 
-n1_lut6 = Mode(name="n1_lut6")
+n1_lut6 = Mode(name="n1_lut6", parent=fle)
 n1_lut6.add_block(ble6)
-n1_lut6.add_direct_connection(inputs=fle.input, outputs=ble6.input)
-n1_lut6.add_direct_connection(inputs=ble6.output, outputs=fle.output[0])
-n1_lut6.add_direct_connection(inputs=fle.clock, outputs=ble6.clock)
+n1_lut6.add_direct_connection(inputs=["fle.input"], outputs=["ble6.input"])
+n1_lut6.add_direct_connection(inputs=["ble6.output"], outputs=["fle.output[0]"])
+n1_lut6.add_direct_connection(inputs=["fle.clock"], outputs=["ble6.clock"])
 
 fle.add_mode(n1_lut6)
 
 clb.add_block(fle)
-clb.add_complete_connection(inputs=[clb.input, fle[9:0].output], outputs=fle[9:0].input)
+clb.add_complete_connection(inputs=["clb.input", "fle[9:0].output"], outputs=["fle[9:0].input"])
+clb.add_complete_connection(inputs=["clb.clock"], outputs=["fle[9:0].clock"])
+clb.add_direct_connection(inputs=["fle[9:0].output"], outputs=["clb.output"])
 
-arch.add_pb(ble6)
+arch.add_pb(clb)
 
 ############# TILES ##############
 

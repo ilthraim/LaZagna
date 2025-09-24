@@ -4,7 +4,7 @@ from xml.dom import minidom
 from typing import TYPE_CHECKING, Optional, Dict, List, Literal
 import networkx as nx
 
-from .vtr_utils import _Node, _PinList
+from .vtr_utils import _Node
 if TYPE_CHECKING:
     from .vtr_blocks import ComplexBlock
 
@@ -219,29 +219,29 @@ class SubTile(_Node):
         ET.SubElement(self._root, "clock", {"name": name, "num_pins": str(num_pins), "equivalent": equivalent})
 
     #lz TODO add custom mapping
-    def add_site(self, cb: ComplexBlock, pin_mapping: Literal["direct", "custom"] = "direct"):
-        if not cb._is_top:
-            raise ValueError("Only top level complex blocks can be added as equivalent sites")
-        ET.SubElement(self._equivalent_sites, "site", {"name": cb.name, "pin_mapping": pin_mapping})
+    # def add_site(self, cb: ComplexBlock, pin_mapping: Literal["direct", "custom"] = "direct"):
+    #     if not cb._is_top:
+    #         raise ValueError("Only top level complex blocks can be added as equivalent sites")
+    #     ET.SubElement(self._equivalent_sites, "site", {"name": cb.name, "pin_mapping": pin_mapping})
 
-        if pin_mapping == "direct":
-            self._graph = nx.compose(self._graph, cb.get_graph())
-            for name, elems in cb._inputs.items():
-                self.add_input(name=name, num_pins=elems[0], equivalent=elems[1], is_global=elems[2])
+    #     if pin_mapping == "direct":
+    #         self._graph = nx.compose(self._graph, cb.get_graph())
+    #         for name, elems in cb._inputs.items():
+    #             self.add_input(name=name, num_pins=elems[0], equivalent=elems[1], is_global=elems[2])
 
-            for name, elems in cb._outputs.items():
-                self.add_output(name=name, num_pins=elems[0], equivalent=elems[1])
+    #         for name, elems in cb._outputs.items():
+    #             self.add_output(name=name, num_pins=elems[0], equivalent=elems[1])
 
-            for name, elems in cb._clocks.items():
-                self.add_clock(name=name, num_pins=elems[0], equivalent=elems[1])
+    #         for name, elems in cb._clocks.items():
+    #             self.add_clock(name=name, num_pins=elems[0], equivalent=elems[1])
 
-    def add_direct_connection(self, inputs: _PinList, outputs: _PinList):
-        if len(inputs) != len(outputs):
-            raise ValueError("Number of input pins must match number of output pins for direct connection")
+    # def add_direct_connection(self, inputs: _PinList, outputs: _PinList):
+    #     if len(inputs) != len(outputs):
+    #         raise ValueError("Number of input pins must match number of output pins for direct connection")
         
-        for i in range(len(inputs)):
-            # self._graph.add_edge(inputs[i].node_name, outputs[i].node_name)
-            ET.SubElement(self._root, "direct_connection", {"input": inputs[i].node_name, "output": outputs[i].node_name})
+    #     for i in range(len(inputs)):
+    #         # self._graph.add_edge(inputs[i].node_name, outputs[i].node_name)
+    #         ET.SubElement(self._root, "direct_connection", {"input": inputs[i].node_name, "output": outputs[i].node_name})
 
     def set_fc(self, in_type: str, in_val: str, out_type: str, out_val: str):
         ET.SubElement(self._root, "fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val":out_val})
