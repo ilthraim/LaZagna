@@ -1,4 +1,4 @@
-from vtr_arch_builder import Arch, Model, Switch, Segment, Tile, SubTile
+from vtr_arch_builder import Arch, Model, Switch, Segment, Tile, SubTile, Power_Estimate
 from vtr_arch_builder import ComplexBlock, Primitive, Mode
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -16,10 +16,32 @@ arch = Arch()
 io_model = Model("io")
 io_model.add_input_ports(name="outpad")
 io_model.add_output_ports(name="inpad")
-
 arch.add_model(io_model)
 
-arch.add_model(Model("spram",  "true"))
+sprams = []
+for spram_name in ["spram512x40", "spram1024x20", "spram2048x10", "spram"]:
+    spram = Model(spram_name)
+    spram.add_input_ports(name="we", clock="clk", comb_ports=["dataout"])
+    spram.add_input_ports(name="addr", clock="clk", comb_ports=["dataout"])
+    spram.add_input_ports(name="datain", clock="clk", comb_ports=["dataout"])
+    spram.add_input_ports(name="clk", is_clock=True)
+    spram.add_output_ports(name="dataout", clock="clk")
+    arch.add_model(spram)
+    sprams.append(spram)
+
+mults = []
+for mult_name in ["two_mult_18x19", "one_mult_27x27"]:
+    mult = Model(mult_name)
+    mult.add_input_ports(name="A", comb_ports=["Y"])
+    mult.add_input_ports(name="B", comb_ports=["Y"])
+    mult.add_output_ports(name="Y")
+    arch.add_model(mult)
+    mults.append(mult)
+
+dsp = Model("dsp")
+dsp.add_input_ports(name="I")
+dsp.add_output_ports(name="result")
+arch.add_model(dsp)
 
 ############## DEVICE ##################
 
@@ -46,7 +68,30 @@ l4Segment.mux(switch1)
 
 arch.add_segment(l4Segment)
 
-########### GRAPH TEST ##############
+########### PBs ##############
+
+io_pb = ComplexBlock(name="io")
+io_pb.add_input(name="outpad", num_pins=1)
+io_pb.add_output(name="inpad", num_pins=1)
+phys_mode = Mode(name="physical", parent=io_pb, disable_packing=True)
+iopad_prim = Primitive(name="iopad", type="custom", blif_model=io_model, num_pb=1)
+phys_mode.add_block(iopad_prim)
+phys_mode.add_direct_connection(["io.outpad"], ["iopad.outpad"], delay_constant=("io.outpad", "iopad.outpad", [26.2256e-12]))
+phys_mode.add_direct_connection(["iopad.inpad"], ["io.inpad"], delay_constant=("iopad.inpad", "io.inpad", [79.8279e-12]))
+io_pb.add_mode(phys_mode)
+in_mode = Mode(name="inpad", parent=io_pb)
+inpad_prim = Primitive(name="inpad", type="input")
+in_mode.add_block(inpad_prim)
+in_mode.add_direct_connection(["inpad.input"], ["io.inpad"], delay_constant=("inpad.input", "io.inpad", [79.8279e-12]))
+io_pb.add_mode(in_mode)
+out_mode = Mode(name="outpad", parent=io_pb)
+outpad_prim = Primitive(name="outpad", type="output")
+out_mode.add_block(outpad_prim)
+out_mode.add_direct_connection(["io.outpad"], ["outpad.output"], delay_constant=("io.outpad", "outpad.output", [26.2256e-12]))
+io_pb.add_mode(out_mode)
+io_pb.set_power_estimate(Power_Estimate("ignore"))
+arch.add_pb(io_pb)
+
 
 lut6 = Primitive(name="lut6", type="lut6", num_pb=1)
 ff = Primitive(name="ff", type="ff", num_pb=1)
@@ -89,18 +134,16 @@ clb.add_direct_connection(inputs=["fle[9:0].output"], outputs=["clb.output"])
 arch.add_pb(clb)
 
 ############# TILES ##############
-
-tile = Tile(name = "clb", area = "53894")
-subTile = SubTile(name = "clb")
-#subTile.add_site()
-
-tile.add_sub_tile(subTile)
-
-arch.add_tile(tile)
+io_tile = Tile(name="io", area=0)
+io_subtile = SubTile(name="io", capacity=8)
+io_subtile.add_site(io_pb)
 
 ############ PRINT ###################
 
 arch.save("my_arch.xml")
 print(arch.to_string()) 
+
+nx.draw(ble6._graph, with_labels=True)
+plt.savefig("graph.png")
 
         

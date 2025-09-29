@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from .vtr_utils import _Node, _Pins
 
 if TYPE_CHECKING:
-    from .vtr_core import Model
+    from .vtr_core import Model, Power_Estimate
 
 #MARK: Mode
 class Mode(_Node):
@@ -29,7 +29,8 @@ class Mode(_Node):
     #lz TODO error check inputs and outputs
     def add_direct_connection(self,
                               inputs: list[str], 
-                              outputs: list[str]):
+                              outputs: list[str],
+                              delay_constant: Optional[tuple[str, str, list[float]]] = None):
         
         for input in inputs:
             ss = parse_property_string(input)
@@ -76,12 +77,26 @@ class Mode(_Node):
         if total_inputs != total_outputs:
             raise ValueError("Number of input pins must match number of output pins for direct connection : " + str(total_inputs) + " != " + str(total_outputs))
 
-        ET.SubElement(self._interconnect, "direct", {
+        conn_node = ET.SubElement(self._interconnect, "direct", {
             "name": "direct" + str(self.num_dc),
             "input": " ".join(inputs),
             "output": " ".join(outputs)
         })
         self.num_dc += 1
+
+        if delay_constant is not None:
+            if delay_constant[0] not in inputs:
+                raise ValueError("Delay constant in_port must be one of the inputs")
+            if delay_constant[1] not in outputs:
+                raise ValueError("Delay constant out_port must be one of the outputs")
+            if len(delay_constant[2]) not in [1, 2]:
+                raise ValueError("Delay constant list must specify min, max, or both")
+            ET.SubElement(conn_node, "delay_constant", {
+                "max": str(delay_constant[2][-1]),
+                "min": str(delay_constant[2][0]),
+                "in_port": delay_constant[0],
+                "out_port": delay_constant[1]
+            })
 
     #lz TODO need to graph this somehow (oh wait we use the individual get methods from pin)
     def add_complete_connection(self,
@@ -165,6 +180,7 @@ class Primitive(_Node):
         self._pins: Dict[str, _Pins] = {}
 
         self._graph = nx.Graph()
+        self._graph.add_node(self)
 
         self._type = type
         self._root = ET.Element("pb_type")
@@ -241,6 +257,9 @@ class Primitive(_Node):
 
         self._pins[name] = _Pins(self, name=name, type="input", num_pins=num_pins)
 
+        self._graph.add_nodes_from(self._pins[name]._pins)
+        self._graph.add_edges_from(zip(self._pins[name]._pins, (self for _ in range(num_pins))))
+
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
             attrs["port_class"] = port_class
@@ -250,6 +269,10 @@ class Primitive(_Node):
         if name in self._pins:
             raise ValueError("Pin with name " + name + " already exists in this primitive")
         self._pins[name] = _Pins(self, name=name, type="output", num_pins=num_pins)
+
+        self._graph.add_nodes_from(self._pins[name]._pins)
+        self._graph.add_edges_from(zip(self._pins[name]._pins, (self for _ in range(num_pins))))
+
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
@@ -261,6 +284,9 @@ class Primitive(_Node):
             raise ValueError("Pin with name " + name + " already exists in this primitive")
         
         self._pins[name] = _Pins(self, name=name, type="clock", num_pins=num_pins)
+
+        self._graph.add_nodes_from(self._pins[name]._pins)
+        self._graph.add_edges_from(zip(self._pins[name]._pins, (self for _ in range(num_pins))))
 
         attrs = {"name": name, "num_pins": str(num_pins)}
         if port_class is not None:
@@ -345,27 +371,12 @@ class ComplexBlock(_Node):
 
     def add_direct_connection(self,
                             inputs: list[str], 
-                            outputs: list[str]):
+                            outputs: list[str],
+                            delay_constant: Optional[tuple[str, str, list[float]]] = None):
         if len(self._modes) > 0:
             raise ValueError("Connections can only be added to complex blocks with no modes")
 
-        for input in inputs:
-            ss = parse_property_string(input)
-            if ss[0] != self._name and ss[0] not in self._contents:
-                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
-            if ss[0] == self._name and ss[1] not in self._pins:
-                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
-            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
-                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
-            
-        for output in outputs:
-            ss = parse_property_string(output)
-            if ss[0] != self._name and ss[0] not in self._contents:
-                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
-            if ss[0] == self._name and ss[1] not in self._pins:
-                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
-            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
-                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
+        self._validate_io(inputs, outputs)
 
         total_inputs = 0
         for input in inputs:
@@ -394,12 +405,26 @@ class ComplexBlock(_Node):
         if total_inputs != total_outputs:
             raise ValueError("Number of input pins must match number of output pins for direct connection : " + str(total_inputs) + " != " + str(total_outputs))
 
-        ET.SubElement(self._interconnect, "direct", {
+        conn_node = ET.SubElement(self._interconnect, "direct", {
             "name": "direct" + str(self.num_dc),
             "input": " ".join(inputs),
             "output": " ".join(outputs)
         })
         self.num_dc += 1
+
+        if delay_constant is not None:
+            if delay_constant[0] not in inputs:
+                raise ValueError("Delay constant in_port must be one of the inputs")
+            if delay_constant[1] not in outputs:
+                raise ValueError("Delay constant out_port must be one of the outputs")
+            if len(delay_constant[2]) not in [1, 2]:
+                raise ValueError("Delay constant list must specify min, max, or both")
+            ET.SubElement(conn_node, "delay_constant", {
+                "max": str(delay_constant[2][-1]),
+                "min": str(delay_constant[2][0]),
+                "in_port": delay_constant[0],
+                "out_port": delay_constant[1]
+            })
 
     def add_complete_connection(self,
                                 inputs: list[str], 
@@ -407,23 +432,7 @@ class ComplexBlock(_Node):
         if len(self._modes) > 0:
             raise ValueError("Connections can only be added to complex blocks with no modes")
 
-        for input in inputs:
-            ss = parse_property_string(input)
-            if ss[0] != self._name and ss[0] not in self._contents:
-                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
-            if ss[0] == self._name and ss[1] not in self._pins:
-                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
-            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
-                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
-            
-        for output in outputs:
-            ss = parse_property_string(output)
-            if ss[0] != self._name and ss[0] not in self._contents:
-                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
-            if ss[0] == self._name and ss[1] not in self._pins:
-                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
-            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
-                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
+        self._validate_io(inputs, outputs)
 
         ET.SubElement(self._interconnect, "complete", {
             "name": "complete" + str(self.num_cc),
@@ -438,22 +447,9 @@ class ComplexBlock(_Node):
         if len(self._modes) > 0:
             raise ValueError("Connections can only be added to complex blocks with no modes")
 
-        for input in inputs:
-            ss = parse_property_string(input)
-            if ss[0] != self._name and ss[0] not in self._contents:
-                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
-            if ss[0] == self._name and ss[1] not in self._pins:
-                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
-            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
-                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
-            
+        self._validate_io(inputs, [outputs])
+
         ss = parse_property_string(outputs)
-        if ss[0] != self._name and ss[0] not in self._contents:
-            raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
-        if ss[0] == self._name and ss[1] not in self._pins:
-            raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
-        if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
-            raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
 
         if ss[4] != None and ss[5] != None and ss[4] != ss[5]:
             raise ValueError("Output of mux must be a single pin")
@@ -477,6 +473,32 @@ class ComplexBlock(_Node):
     def set_n_top(self):
         self._is_top = False
         self._root.set("num_pb", str(self._num_pb))
+
+    def set_power_estimate(self, power: Power_Estimate):
+        for port in power._ports:
+            if port not in self._pins:
+                raise ValueError(f"Port {port} not found in block {self._name}")
+            
+        self._root.append(power.to_elem())
+
+    def _validate_io(self, inputs: list[str], outputs: list[str]):
+        for input in inputs:
+            ss = parse_property_string(input)
+            if ss[0] != self._name and ss[0] not in self._contents:
+                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
+            if ss[0] == self._name and ss[1] not in self._pins:
+                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
+            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
+                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
+            
+        for output in outputs:
+            ss = parse_property_string(output)
+            if ss[0] != self._name and ss[0] not in self._contents:
+                raise ValueError("Block " + ss[0] + " not found in complex block " + self._name)
+            if ss[0] == self._name and ss[1] not in self._pins:
+                raise ValueError("Pin " + ss[1] + " not found in complex block " + self._name)
+            if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
+                raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
 
 def parse_property_string(s: str):
     """

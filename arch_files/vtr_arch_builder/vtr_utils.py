@@ -13,6 +13,13 @@ class _Node:
 
     def to_elem(self) -> ET.Element:
         return self._root
+    
+class _Pin():
+    def __init__(self,
+                 parent: _Pins,
+                 index: int):
+        self._parent = parent
+        self._index = index
 
 class _Pins():
     def __init__(self,
@@ -31,6 +38,7 @@ class _Pins():
         self._type = type
         self._equivalence = equivalence
         self._num_pins = num_pins
+        self._pins = [_Pin(self, i) for i in range(num_pins)]
 
         if is_non_clock_global:
             self._is_non_clock_global = is_non_clock_global

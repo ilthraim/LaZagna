@@ -164,7 +164,7 @@ class Model(_Node):
         self._inputs = ET.SubElement(self._root, "input_ports")
         self._outputs = ET.SubElement(self._root, "output_ports")
 
-    def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None, comb_ports: Optional[tuple] = None):
+    def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None, comb_ports: Optional[list] = None):
         elems = {"name": name, "is_clock": "1" if is_clock else "0"}
         if clock != None:
             elems["clock"] = clock
@@ -190,19 +190,52 @@ class Model(_Node):
 
 #MARK: Tile    
 class Tile(_Node):
-    def __init__(self, name: str, width: str = "1", height: str = "1", area: Optional[str] = None):
+    def __init__(self, name: str, width: int = 1, height: int = 1, area: Optional[int] = None):
         if area != None:
-            self._root = ET.Element("tile", {"name": name, "width": width, "height": height, "area":area})
+            self._root = ET.Element("tile", {"name": name, "width": str(width), "height": str(height), "area": str(area)})
         else:
-            self._root = ET.Element("tile", {"name": name, "width": width, "height": height})
+            self._root = ET.Element("tile", {"name": name, "width": str(width), "height": str(height)})
 
     def add_sub_tile(self, subTile: SubTile):
         self._root.append(subTile.to_elem())
 
+#MARK: Power_Estimate
+class Power_Estimate(_Node):
+    def __init__(self, method: Literal["specify-size", "auto-size", "pin-toggle", "C-internal", "absolute", "ignore", "sum-of-children"]):
+        if method not in ["specify-size", "auto-size", "pin-toggle", "C-internal", "absolute", "ignore", "sum-of-children"]:
+            raise ValueError("Method must be one of specify-size, auto-size, pin-toggle, C-internal, absolute, ignore, or sum-of-children")
+        self._root = ET.Element("power", {"method": method})
+
+        self._ports = []
+
+    def set_dynamic_power(self, power_per_instance: Optional[float] = None, C_internal: Optional[float] = None):
+        if power_per_instance == None and C_internal == None:
+            raise ValueError("At least one of power_per_instance or C_internal must be provided")
+        elems = {}
+        if power_per_instance != None:
+            elems["power_per_instance"] = str(power_per_instance)
+        if C_internal != None:
+            elems["C_internal"] = str(C_internal)
+        ET.SubElement(self._root, "dynamic", elems)
+
+    def set_static_power(self, power_per_instance: float):
+        ET.SubElement(self._root, "static", {"power_per_instance": str(power_per_instance)})
+
+    def set_port_power(self, name: str, energy_per_toggle: float, scaled_by_static_prob: Optional[str] = None, scaled_by_static_prob_n: Optional[str] = None):
+        self._ports.append(name)
+        elems = {"name": name, "energy_per_toggle": str(energy_per_toggle)}
+        if scaled_by_static_prob != None:
+            elems["scaled_by_static_prob"] = scaled_by_static_prob
+            self._ports.append(scaled_by_static_prob)
+        if scaled_by_static_prob_n != None:
+            elems["scaled_by_static_prob_n"] = scaled_by_static_prob_n
+            self._ports.append(scaled_by_static_prob_n)
+        self.port = ET.SubElement(self._root, "port", elems)
+
 #MARK: SubTile
 class SubTile(_Node):
-    def __init__(self, name: str, capacity: str = "1"):
-        self._root = ET.Element("sub_tile", {"name": name, "capacity": capacity})
+    def __init__(self, name: str, capacity: int = 1):
+        self._root = ET.Element("sub_tile", {"name": name, "capacity": str(capacity)})
         self._equivalent_sites = ET.SubElement(self._root, "equivalent_sites")
         self._pin_locations = ET.SubElement(self._root, "pin_locations")
         self._graph = nx.Graph()
@@ -219,21 +252,15 @@ class SubTile(_Node):
         ET.SubElement(self._root, "clock", {"name": name, "num_pins": str(num_pins), "equivalent": equivalent})
 
     #lz TODO add custom mapping
-    # def add_site(self, cb: ComplexBlock, pin_mapping: Literal["direct", "custom"] = "direct"):
-    #     if not cb._is_top:
-    #         raise ValueError("Only top level complex blocks can be added as equivalent sites")
-    #     ET.SubElement(self._equivalent_sites, "site", {"name": cb.name, "pin_mapping": pin_mapping})
+    def add_site(self, cb: ComplexBlock, pin_mapping: Literal["direct", "custom"] = "direct"):
+        if not cb._is_top:
+            raise ValueError("Only top level complex blocks can be added as equivalent sites")
+        ET.SubElement(self._equivalent_sites, "site", {"name": cb._name, "pin_mapping": pin_mapping})
 
-    #     if pin_mapping == "direct":
-    #         self._graph = nx.compose(self._graph, cb.get_graph())
-    #         for name, elems in cb._inputs.items():
-    #             self.add_input(name=name, num_pins=elems[0], equivalent=elems[1], is_global=elems[2])
-
-    #         for name, elems in cb._outputs.items():
-    #             self.add_output(name=name, num_pins=elems[0], equivalent=elems[1])
-
-    #         for name, elems in cb._clocks.items():
-    #             self.add_clock(name=name, num_pins=elems[0], equivalent=elems[1])
+        if pin_mapping == "direct":
+            self._graph = nx.compose(self._graph, cb.get_graph())
+            for ports in cb._pins.values():
+                self._root.append(ports.get_xml_node())
 
     # def add_direct_connection(self, inputs: _PinList, outputs: _PinList):
     #     if len(inputs) != len(outputs):
