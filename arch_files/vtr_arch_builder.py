@@ -137,6 +137,11 @@ arch.add_pb(clb)
 io_tile = Tile(name="io", area=0)
 io_subtile = SubTile(name="io", capacity=8)
 io_subtile.add_site(io_pb)
+io_subtile.set_fc(in_type="frac", in_val = 0.15, out_type="frac", out_val=0.10)
+
+io_tile.add_sub_tile(io_subtile)
+
+arch.add_tile(io_tile)
 
 ############ PRINT ###################
 

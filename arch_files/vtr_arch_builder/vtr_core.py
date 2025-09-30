@@ -4,7 +4,7 @@ from xml.dom import minidom
 from typing import TYPE_CHECKING, Optional, Dict, List, Literal
 import networkx as nx
 
-from .vtr_utils import _Node
+from .vtr_utils import _Node, parse_property_string
 if TYPE_CHECKING:
     from .vtr_blocks import ComplexBlock
 
@@ -239,39 +239,94 @@ class SubTile(_Node):
         self._equivalent_sites = ET.SubElement(self._root, "equivalent_sites")
         self._pin_locations = ET.SubElement(self._root, "pin_locations")
         self._graph = nx.Graph()
+        self._pbs: List[ComplexBlock] = []
+        self._name = name
+        self._capacity = capacity
+        self._pins: Dict[str, int] = {}
 
     #lz TODO add inputs and outputs to the graph and connect them
 
     def add_input(self, name: str, num_pins: int, equivalent: str = "none", is_global: bool = False):
         ET.SubElement(self._root, "input", {"name": name, "num_pins": str(num_pins), "equivalent": equivalent, "is_non_clock_global": str(is_global)})
+        self._pins[name] = num_pins
 
     def add_output(self, name: str, num_pins: int, equivalent: str = "none"):
         ET.SubElement(self._root, "output", {"name": name, "num_pins": str(num_pins), "equivalent": equivalent})
+        self._pins[name] = num_pins
 
     def add_clock(self, name: str, num_pins: int, equivalent: str = "none"):
         ET.SubElement(self._root, "clock", {"name": name, "num_pins": str(num_pins), "equivalent": equivalent})
+        self._pins[name] = num_pins
 
     #lz TODO add custom mapping
-    def add_site(self, cb: ComplexBlock, pin_mapping: Literal["direct", "custom"] = "direct"):
+    def add_site(self, cb: ComplexBlock, pin_mapping: Literal["direct", "custom"] = "direct", custom_mapping: Optional[Dict[str, str]] = None):
         if not cb._is_top:
             raise ValueError("Only top level complex blocks can be added as equivalent sites")
-        ET.SubElement(self._equivalent_sites, "site", {"name": cb._name, "pin_mapping": pin_mapping})
+        site_node = ET.SubElement(self._equivalent_sites, "site", {"name": cb._name, "pin_mapping": pin_mapping})
+
+        self._pbs.append(cb)
 
         if pin_mapping == "direct":
             self._graph = nx.compose(self._graph, cb.get_graph())
             for ports in cb._pins.values():
                 self._root.append(ports.get_xml_node())
 
-    # def add_direct_connection(self, inputs: _PinList, outputs: _PinList):
-    #     if len(inputs) != len(outputs):
-    #         raise ValueError("Number of input pins must match number of output pins for direct connection")
-        
-    #     for i in range(len(inputs)):
-    #         # self._graph.add_edge(inputs[i].node_name, outputs[i].node_name)
-    #         ET.SubElement(self._root, "direct_connection", {"input": inputs[i].node_name, "output": outputs[i].node_name})
+        if custom_mapping != None:
+            if pin_mapping != "custom":
+                raise ValueError("Custom mapping can only be provided if pin_mapping is set to custom")
+            for input, output in custom_mapping:
+                iblock, ipin, iblock_start, iblock_end, ipin_start, ipin_end = parse_property_string(input)
+                oblock, opin, oblock_start, oblock_end, opin_start, opin_end = parse_property_string(output)
 
-    def set_fc(self, in_type: str, in_val: str, out_type: str, out_val: str):
-        ET.SubElement(self._root, "fc", {"in_type": in_type, "in_val": in_val, "out_type": out_type, "out_val":out_val})
+                if iblock == cb._name and oblock == self._name:
+                    if ipin not in cb._pins:
+                        raise ValueError(f"Input pin {ipin} not found in complex block {cb._name}")
+                    if opin not in self._pins:
+                        raise ValueError(f"Output pin {opin} not found in subtile {self._name}")
+                    if oblock_start != None or oblock_end != None or iblock_start != None or iblock_end != None:
+                        raise ValueError("Subtile cannot have ranges")
+                    num_ipins = num_opins = 0
+
+                    if ipin_start != None and ipin_end == None:
+                        if ipin_start >= cb._pins[ipin]._num_pins - 1:
+                            raise ValueError(f"Start index {ipin_start} out of range for pin {ipin} in complex block {cb._name}")
+                        num_ipins = 1
+                    elif ipin_start != None and ipin_end != None:
+                        if ipin_start >= cb._pins[ipin]._num_pins or ipin_end >= cb._pins[ipin]._num_pins or ipin_start > ipin_end:
+                            raise ValueError(f"Invalid range {ipin_start}:{ipin_end} for pin {ipin} in complex block {cb._name}")
+                        num_ipins = ipin_end - ipin_start + 1
+                    else:
+                        num_ipins = 1
+
+                    if opin_start != None and opin_end == None:
+                        if opin_start >= self._pins[opin] - 1:
+                            raise ValueError(f"Start index {opin_start} out of range for pin {opin} in subtile {self._name}")
+                        num_opins = 1
+                    elif opin_start != None and opin_end != None:
+                        if opin_start >= self._pins[opin] or opin_end >= self._pins[opin] or opin_start > opin_end:
+                            raise ValueError(f"Invalid range {opin_start}:{opin_end} for pin {opin} in subtile {self._name}")
+                        num_opins = opin_end - opin_start + 1
+                    else:
+                        num_opins = 1
+
+                    if num_ipins != num_opins:
+                        raise ValueError(f"Number of pins in mapping must be the same, got {num_ipins} and {num_opins}")
+                    
+                    ET.SubElement(site_node, "direct", {"from": input, "to": output})
+                elif iblock == self._name and oblock == cb._name:
+                    if ipin not in self._pins:
+                        raise ValueError(f"Input pin {ipin} not found in subtile {self._name}")
+                    if opin not in cb._pins:
+                        raise ValueError(f"Output pin {opin} not found in complex block {cb._name}")
+                    if oblock_start != None or oblock_end != None or iblock_start != None or iblock_end != None:
+                        raise ValueError("Subtile cannot have ranges")
+                    
+
+                else:
+                    raise ValueError("Custom mapping must be between the complex block and the subtile")
+
+    def set_fc(self, in_type: Literal["frac", "abs"], in_val: int | float, out_type: str, out_val: int | float):
+        ET.SubElement(self._root, "fc", {"in_type": in_type, "in_val": str(in_val), "out_type": out_type, "out_val": str(out_val)})
 
     def set_pin_locations(self, pattern: Literal["spread", "perimeter", "spread_inputs_perimeter_outputs", "custom"]):
         if pattern not in ["spread", "perimeter", "spread_inputs_perimeter_outputs", "custom"]:

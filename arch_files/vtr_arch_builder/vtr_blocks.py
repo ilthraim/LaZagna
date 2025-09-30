@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Optional, List, Literal, Dict
 import copy
 import re
 import xml.etree.ElementTree as ET
-from .vtr_utils import _Node, _Pins
+from .vtr_utils import _Node, _Pins, parse_property_string
 
 if TYPE_CHECKING:
     from .vtr_core import Model, Power_Estimate
@@ -500,26 +500,3 @@ class ComplexBlock(_Node):
             if ss[0] != self._name and ss[1] not in self._contents[ss[0]]._pins:
                 raise ValueError("Pin " + ss[1] + " not found in block " + ss[0])
 
-def parse_property_string(s: str):
-    """
-    Parse a string of the format 'string1[index1:index2].string2[index3:index4]'
-    where indices are optional.
-    
-    Returns:
-        (str1, str2, idx1, idx2, idx3, idx4)
-        Integers or None if not present.
-    """
-    # Pattern: name + optional [x(:y)?]
-    pattern = r"^([a-zA-Z_]\w*)(?:\[(\d+)(?::(\d+))?\])?\." \
-            r"([a-zA-Z_]\w*)(?:\[(\d+)(?::(\d+))?\])?$"
-    
-    match = re.match(pattern, s)
-    if not match:
-        raise ValueError(f"Invalid format: {s}")
-    
-    str1, i1, i2, str2, i3, i4 = match.groups()
-    
-    # Convert numeric strings to int or None
-    def to_int(x): return int(x) if x is not None else None
-    
-    return str1, str2, to_int(i1), to_int(i2), to_int(i3), to_int(i4)
