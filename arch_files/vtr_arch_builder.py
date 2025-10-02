@@ -1,4 +1,4 @@
-from vtr_arch_builder import Arch, Model, Switch, Segment, Tile, SubTile, Power_Estimate
+from vtr_arch_builder import Arch, Model, Switch, Segment, Tile, SubTile, PowerEstimate, PinOffset, PinLocations
 from vtr_arch_builder import ComplexBlock, Primitive, Mode
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -89,7 +89,7 @@ outpad_prim = Primitive(name="outpad", type="output")
 out_mode.add_block(outpad_prim)
 out_mode.add_direct_connection(["io.outpad"], ["outpad.output"], delay_constant=("io.outpad", "outpad.output", [26.2256e-12]))
 io_pb.add_mode(out_mode)
-io_pb.set_power_estimate(Power_Estimate("ignore"))
+io_pb.set_power_estimate(PowerEstimate("ignore"))
 arch.add_pb(io_pb)
 
 
@@ -97,51 +97,90 @@ lut6 = Primitive(name="lut6", type="lut6", num_pb=1)
 ff = Primitive(name="ff", type="ff", num_pb=1)
 
 clb = ComplexBlock(name="clb")
-clb.add_input(name="input", num_pins=40, equivalence="full")
-clb.add_output(name="output", num_pins=10)
-clb.add_clock(name="clock", num_pins=1)
+clb.add_input(name="I", num_pins=40, equivalence="full")
+clb.add_output(name="O", num_pins=10, equivalence="none")
+clb.add_clock(name="clk", num_pins=1)
 
 fle = ComplexBlock(name="fle", num_pb=10)
-fle.add_input(name="input", num_pins=6)
-fle.add_output(name="output", num_pins=1)
-fle.add_clock(name="clock", num_pins=1)
+fle.add_input(name="in", num_pins=6)
+fle.add_output(name="out", num_pins=1)
+fle.add_clock(name="clk", num_pins=1)
 
 ble6 = ComplexBlock(name="ble6", num_pb=1)
-ble6.add_input(name="input", num_pins=6)
-ble6.add_output(name="output", num_pins=1)
-ble6.add_clock(name="clock", num_pins=1)
+ble6.add_input(name="in", num_pins=6)
+ble6.add_output(name="out", num_pins=1)
+ble6.add_clock(name="clk", num_pins=1)
 
 ble6.add_block(lut6)
 ble6.add_block(ff)
-ble6.add_direct_connection(inputs=["ble6.input"], outputs=["lut6.input"])
+ble6.add_direct_connection(inputs=["ble6.in"], outputs=["lut6.input"])
 ble6.add_direct_connection(inputs=["lut6.output"], outputs=["ff.D"])
-ble6.add_direct_connection(inputs=["ble6.clock"], outputs=["ff.clock"])
-ble6.add_mux_connection(inputs=["ff.Q", "lut6.output"], outputs="ble6.output")
+ble6.add_direct_connection(inputs=["ble6.clk"], outputs=["ff.clock"])
+ble6.add_mux_connection(inputs=["ff.Q", "lut6.output"], outputs="ble6.out")
 
 n1_lut6 = Mode(name="n1_lut6", parent=fle)
 n1_lut6.add_block(ble6)
-n1_lut6.add_direct_connection(inputs=["fle.input"], outputs=["ble6.input"])
-n1_lut6.add_direct_connection(inputs=["ble6.output"], outputs=["fle.output[0]"])
-n1_lut6.add_direct_connection(inputs=["fle.clock"], outputs=["ble6.clock"])
+n1_lut6.add_direct_connection(inputs=["fle.in"], outputs=["ble6.in"])
+n1_lut6.add_direct_connection(inputs=["ble6.out"], outputs=["fle.out"])
+n1_lut6.add_direct_connection(inputs=["fle.clk"], outputs=["ble6.clk"])
 
 fle.add_mode(n1_lut6)
 
 clb.add_block(fle)
-clb.add_complete_connection(inputs=["clb.input", "fle[9:0].output"], outputs=["fle[9:0].input"])
-clb.add_complete_connection(inputs=["clb.clock"], outputs=["fle[9:0].clock"])
-clb.add_direct_connection(inputs=["fle[9:0].output"], outputs=["clb.output"])
+clb.add_complete_connection(inputs=["clb.I", "fle[9:0].out"], outputs=["fle[9:0].in"])
+clb.add_complete_connection(inputs=["clb.clk"], outputs=["fle[9:0].clk"])
+clb.add_direct_connection(inputs=["fle[9:0].out"], outputs=["clb.O"])
 
 arch.add_pb(clb)
+
+spram = ComplexBlock(name="spram")
+spram.add_input(name="addr", num_pins=11)
+spram.add_input(name="din", num_pins=40)
+spram.add_input(name="we1", num_pins=1)
+spram.add_output(name="dout", num_pins=40)
+spram.add_clock(name="clk", num_pins=1)
+
+spram_phys_mode = Mode(name="physical", parent=spram, disable_packing=True)
+spram_phys_prim = Primitive(name="physical", type="custom", blif_model=sprams[-1], num_pb=1)
 
 ############# TILES ##############
 io_tile = Tile(name="io", area=0)
 io_subtile = SubTile(name="io", capacity=8)
 io_subtile.add_site(io_pb)
 io_subtile.set_fc(in_type="frac", in_val = 0.15, out_type="frac", out_val=0.10)
-
+print(io_subtile._pins)
+io_subtile.set_pin_locations(pattern="custom",
+                             pin_mapping=PinLocations(
+                                 left=PinOffset(names=["io.outpad", "io.inpad"]),
+                                 right=PinOffset(names=["io.outpad", "io.inpad"]),
+                                 top=PinOffset(names=["io.outpad", "io.inpad"]),
+                                 bottom=PinOffset(names=["io.outpad", "io.inpad"])
+                             )
+)
 io_tile.add_sub_tile(io_subtile)
-
 arch.add_tile(io_tile)
+
+clb_tile = Tile(name="clb", area=53894)
+clb_subtile = SubTile(name="clb")
+clb_subtile.add_site(clb)
+clb_subtile.set_fc(in_type="frac", in_val = 0.15, out_type="frac", out_val=0.10)
+clb_subtile.set_pin_locations(pattern="custom",
+                             pin_mapping=PinLocations(
+                                 left=PinOffset(names=["clb.clk", "clb.O[0:2]", "clb.I[0:9]"]),
+                                 top=PinOffset(names=["clb.O[3:5]", "clb.I[10:19]"]),
+                                 right=PinOffset(names=["clb.O[6:7]", "clb.I[20:29]"]),
+                                 bottom=PinOffset(names=["clb.O[8:9]", "clb.I[30:39]"]))
+)
+clb_tile.add_sub_tile(clb_subtile)
+arch.add_tile(clb_tile)
+
+spram_tile = Tile(name="spram", height=1, width=1, area=137668)
+spram_subtile = SubTile(name="spram")
+spram_subtile.add_site()
+
+spram_tile.add_sub_tile(spram_subtile)
+arch.add_tile(spram_tile)
+
 
 ############ PRINT ###################
 

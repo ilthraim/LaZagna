@@ -199,8 +199,8 @@ class Tile(_Node):
     def add_sub_tile(self, subTile: SubTile):
         self._root.append(subTile.to_elem())
 
-#MARK: Power_Estimate
-class Power_Estimate(_Node):
+#MARK: PowerEstimate
+class PowerEstimate(_Node):
     def __init__(self, method: Literal["specify-size", "auto-size", "pin-toggle", "C-internal", "absolute", "ignore", "sum-of-children"]):
         if method not in ["specify-size", "auto-size", "pin-toggle", "C-internal", "absolute", "ignore", "sum-of-children"]:
             raise ValueError("Method must be one of specify-size, auto-size, pin-toggle, C-internal, absolute, ignore, or sum-of-children")
@@ -231,6 +231,20 @@ class Power_Estimate(_Node):
             elems["scaled_by_static_prob_n"] = scaled_by_static_prob_n
             self._ports.append(scaled_by_static_prob_n)
         self.port = ET.SubElement(self._root, "port", elems)
+
+from dataclasses import dataclass, field
+
+@dataclass
+class PinOffset:
+    names: List[str]
+    xoffset: Optional[int] = None
+    yoffset: Optional[int] = None
+@dataclass
+class PinLocations:
+    left: Optional[PinOffset] = None
+    right: Optional[PinOffset] = None
+    top: Optional[PinOffset] = None
+    bottom: Optional[PinOffset] = None
 
 #MARK: SubTile
 class SubTile(_Node):
@@ -270,6 +284,7 @@ class SubTile(_Node):
             self._graph = nx.compose(self._graph, cb.get_graph())
             for ports in cb._pins.values():
                 self._root.append(ports.get_xml_node())
+                self._pins[ports._name] = ports._num_pins
 
         if custom_mapping != None:
             if pin_mapping != "custom":
@@ -278,13 +293,14 @@ class SubTile(_Node):
                 iblock, ipin, iblock_start, iblock_end, ipin_start, ipin_end = parse_property_string(input)
                 oblock, opin, oblock_start, oblock_end, opin_start, opin_end = parse_property_string(output)
 
+                if oblock_start != None or oblock_end != None or iblock_start != None or iblock_end != None:
+                    raise ValueError("Subtile cannot have ranges")
+
                 if iblock == cb._name and oblock == self._name:
                     if ipin not in cb._pins:
                         raise ValueError(f"Input pin {ipin} not found in complex block {cb._name}")
                     if opin not in self._pins:
                         raise ValueError(f"Output pin {opin} not found in subtile {self._name}")
-                    if oblock_start != None or oblock_end != None or iblock_start != None or iblock_end != None:
-                        raise ValueError("Subtile cannot have ranges")
                     num_ipins = num_opins = 0
 
                     if ipin_start != None and ipin_end == None:
@@ -312,7 +328,7 @@ class SubTile(_Node):
                     if num_ipins != num_opins:
                         raise ValueError(f"Number of pins in mapping must be the same, got {num_ipins} and {num_opins}")
                     
-                    ET.SubElement(site_node, "direct", {"from": input, "to": output})
+                    
                 elif iblock == self._name and oblock == cb._name:
                     if ipin not in self._pins:
                         raise ValueError(f"Input pin {ipin} not found in subtile {self._name}")
@@ -320,18 +336,75 @@ class SubTile(_Node):
                         raise ValueError(f"Output pin {opin} not found in complex block {cb._name}")
                     if oblock_start != None or oblock_end != None or iblock_start != None or iblock_end != None:
                         raise ValueError("Subtile cannot have ranges")
-                    
+                    num_ipins = num_opins = 0
+
+                    if ipin_start != None and ipin_end == None:
+                        if ipin_start >= self._pins[ipin] - 1:
+                            raise ValueError(f"Start index {ipin_start} out of range for pin {ipin} in subtile {self._name}")
+                        num_ipins = 1
+                    elif ipin_start != None and ipin_end != None:
+                        if ipin_start >= self._pins[ipin] or ipin_end >= self._pins[ipin] or ipin_start > ipin_end:
+                            raise ValueError(f"Invalid range {ipin_start}:{ipin_end} for pin {ipin} in subtile {self._name}")
+                        num_ipins = ipin_end - ipin_start + 1
+                    else:
+                        num_ipins = 1
+
+                    if opin_start != None and opin_end == None:
+                        if opin_start >= cb._pins[opin]._num_pins - 1:
+                            raise ValueError(f"Start index {opin_start} out of range for pin {opin} in complex block {cb._name}")
+                        num_opins = 1
+                    elif opin_start != None and opin_end != None:
+                        if opin_start >= cb._pins[opin]._num_pins or opin_end >= cb._pins[opin]._num_pins or opin_start > opin_end:
+                            raise ValueError(f"Invalid range {opin_start}:{opin_end} for pin {opin} in complex block {cb._name}")
+                        num_opins = opin_end - opin_start + 1
+                    else:
+                        num_opins = 1
+
+                    if num_ipins != num_opins:
+                        raise ValueError(f"Number of pins in mapping must be the same, got {num_ipins} and {num_opins}")
+  
 
                 else:
                     raise ValueError("Custom mapping must be between the complex block and the subtile")
+                
+                ET.SubElement(site_node, "direct", {"from": input, "to": output})
 
     def set_fc(self, in_type: Literal["frac", "abs"], in_val: int | float, out_type: str, out_val: int | float):
         ET.SubElement(self._root, "fc", {"in_type": in_type, "in_val": str(in_val), "out_type": out_type, "out_val": str(out_val)})
 
-    def set_pin_locations(self, pattern: Literal["spread", "perimeter", "spread_inputs_perimeter_outputs", "custom"]):
+    def set_pin_locations(self, pattern: Literal["spread", "perimeter", "spread_inputs_perimeter_outputs", "custom"],
+                          pin_mapping: Optional[PinLocations] = None):
         if pattern not in ["spread", "perimeter", "spread_inputs_perimeter_outputs", "custom"]:
             raise ValueError("Pattern must be spread, perimeter, spread_inputs_perimeter_outputs, or custom")
+        if pin_mapping != None and pattern != "custom":
+            raise ValueError("Pin mapping can only be provided if pattern is set to custom")
+        
         self._pin_locations.set("pattern", pattern)
+
+        if pin_mapping != None:
+            for pin_offset, side in zip([pin_mapping.left, pin_mapping.right, pin_mapping.top, pin_mapping.bottom], ["left", "right", "top", "bottom"]):
+                if pin_offset != None:
+                    for name in pin_offset.names:
+                        block, pin, block_start, block_end, pin_start, pin_end = parse_property_string(name)
+                        if block != self._name:
+                            raise ValueError("Can only define pin offsets for pins on the subtile")
+                        if pin not in self._pins:
+                            raise ValueError(f"Pin {pin} not found in subtile {self._name}")
+                        if block_start != None and block_start >= self._capacity:
+                            raise ValueError(f"Block start {block_start} out of range for subtile {self._name}")
+                        if block_end != None and block_end >= self._capacity:
+                            raise ValueError(f"Block end {block_end} out of range for subtile {self._name}")
+                        if pin_start != None and pin_start >= self._pins[pin]:
+                            raise ValueError(f"Pin start {pin_start} out of range for pin {pin} in subtile {self._name}")
+                        if pin_end != None and pin_end >= self._pins[pin]:
+                            raise ValueError(f"Pin end {pin_end} out of range for pin {pin} in subtile {self._name}")
+                    elems = {"side": side}
+                    if pin_offset.xoffset != None:
+                        elems["xoffset"] = str(pin_offset.xoffset)
+                    if pin_offset.yoffset != None:
+                        elems["yoffset"] = str(pin_offset.yoffset)
+                    side_node = ET.SubElement(self._pin_locations, "loc", elems)
+                    side_node.text = " ".join(pin_offset.names)
 
     #lz TODO add pin locations - come from block list too?
 
