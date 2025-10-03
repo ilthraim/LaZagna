@@ -159,12 +159,16 @@ class Model(_Node):
         self.name = name
         self._root = ET.Element("model", {"name": name, "never_prune": prune})
         self.inputs: Dict[str, int] = {}
+        self.inputs_class: Dict[str, str] = {}
         self.outputs: Dict[str, int] = {}
+        self.outputs_class: Dict[str, str] = {}
         self.clocks: Dict[str, int] = {}
+        self.clocks_class: Dict[str, str] = {}
         self._inputs = ET.SubElement(self._root, "input_ports")
         self._outputs = ET.SubElement(self._root, "output_ports")
 
-    def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None, comb_ports: Optional[list] = None):
+    def add_input_ports(self, name: str, num_ports: int = 1, is_clock: bool = False, clock: Optional[str] = None,
+                        comb_ports: Optional[list] = None, port_class: Optional[str] = None):
         elems = {"name": name, "is_clock": "1" if is_clock else "0"}
         if clock != None:
             elems["clock"] = clock
@@ -173,17 +177,23 @@ class Model(_Node):
 
         if is_clock:
             self.clocks[name] = num_ports
+            if port_class != None:
+                self.clocks_class[port_class] = name
         else:
             self.inputs[name] = num_ports
+            if port_class != None:
+                self.inputs_class[port_class] = name
 
         ET.SubElement(self._inputs, "port", elems)
 
-    def add_output_ports(self, name: str, num_ports: int = 1, clock: Optional[str] = None):
+    def add_output_ports(self, name: str, num_ports: int = 1, clock: Optional[str] = None, port_class: Optional[str] = None):
         elems = {"name": name}
         if clock != None:
             elems["clock"] = clock
 
         self.outputs[name] = num_ports
+        if port_class != None:
+            self.outputs_class[port_class] = name
 
         ET.SubElement(self._outputs, "port", elems)
 

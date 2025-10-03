@@ -21,11 +21,11 @@ arch.add_model(io_model)
 sprams = []
 for spram_name in ["spram512x40", "spram1024x20", "spram2048x10", "spram"]:
     spram = Model(spram_name)
-    spram.add_input_ports(name="we", clock="clk", comb_ports=["dataout"])
-    spram.add_input_ports(name="addr", clock="clk", comb_ports=["dataout"])
-    spram.add_input_ports(name="datain", clock="clk", comb_ports=["dataout"])
-    spram.add_input_ports(name="clk", is_clock=True)
-    spram.add_output_ports(name="dataout", clock="clk")
+    spram.add_input_ports(name="we", clock="clk", comb_ports=["dataout"], port_class="write_en")
+    spram.add_input_ports(name="addr", num_ports=11, clock="clk", comb_ports=["dataout"], port_class="address")
+    spram.add_input_ports(name="datain", num_ports=40, clock="clk", comb_ports=["dataout"], port_class="data_in")
+    spram.add_input_ports(name="clk", is_clock=True, port_class="clock")
+    spram.add_output_ports(name="dataout", num_ports=40, clock="clk", port_class="data_out")
     arch.add_model(spram)
     sprams.append(spram)
 
@@ -141,14 +141,22 @@ spram.add_output(name="dout", num_pins=40)
 spram.add_clock(name="clk", num_pins=1)
 
 spram_phys_mode = Mode(name="physical", parent=spram, disable_packing=True)
-spram_phys_prim = Primitive(name="physical", type="custom", blif_model=sprams[-1], num_pb=1)
+spram_phys_prim = Primitive(name="physical", type="memory", blif_model=sprams[-1], num_pb=1)
+spram_phys_mode.add_block(spram_phys_prim)
+spram_phys_mode.add_direct_connection(inputs=["spram.addr"], outputs=["physical.addr"])
+spram_phys_mode.add_direct_connection(inputs=["spram.din"], outputs=["physical.datain"])
+spram_phys_mode.add_direct_connection(inputs=["spram.we1"], outputs=["physical.we"])
+spram_phys_mode.add_direct_connection(inputs=["physical.dataout"], outputs=["spram.dout"])
+spram_phys_mode.add_direct_connection(inputs=["spram.clk"], outputs=["physical.clk"])
+
+spram.add_mode(spram_phys_mode)
+arch.add_pb(spram)
 
 ############# TILES ##############
 io_tile = Tile(name="io", area=0)
 io_subtile = SubTile(name="io", capacity=8)
 io_subtile.add_site(io_pb)
 io_subtile.set_fc(in_type="frac", in_val = 0.15, out_type="frac", out_val=0.10)
-print(io_subtile._pins)
 io_subtile.set_pin_locations(pattern="custom",
                              pin_mapping=PinLocations(
                                  left=PinOffset(names=["io.outpad", "io.inpad"]),
@@ -176,7 +184,7 @@ arch.add_tile(clb_tile)
 
 spram_tile = Tile(name="spram", height=1, width=1, area=137668)
 spram_subtile = SubTile(name="spram")
-spram_subtile.add_site()
+#spram_subtile.add_site()
 
 spram_tile.add_sub_tile(spram_subtile)
 arch.add_tile(spram_tile)

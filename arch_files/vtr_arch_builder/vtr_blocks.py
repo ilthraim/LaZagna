@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from .vtr_utils import _Node, _Pins, parse_property_string
 
 if TYPE_CHECKING:
-    from .vtr_core import Model, Power_Estimate
+    from .vtr_core import Model, PowerEstimate
 
 #MARK: Mode
 class Mode(_Node):
@@ -211,24 +211,24 @@ class Primitive(_Node):
 
         self._root.attrib.update(self._elems)
     
-    def _input(self, num_pb: int = 1):
+    def _input(self):
         self._elems["blif_model"] = ".input"
 
         self._add_output("input", 1)
 
-    def _output(self, num_pb: int = 1):
+    def _output(self):
         self._elems["blif_model"] = ".output"
 
         self._add_input("output", 1)
 
-    def _lut(self, num_pins: int, num_pb: int = 1):
+    def _lut(self, num_pins: int):
         self._elems["blif_model"] = ".names"
         self._elems["class"] = "lut"
 
         self._add_input("input", num_pins, "lut_in")
         self._add_output("output", 1, "lut_out")
 
-    def _ff(self, num_pb: int = 1):
+    def _ff(self):
         self._elems["blif_model"] = ".latch"
         self._elems["class"] = "flipflop"
 
@@ -237,9 +237,38 @@ class Primitive(_Node):
         self._add_clock(name="clock",num_pins= 1, port_class="clock")
 
     #lz TODO memory
-    def _memory(self, blif_model: Model, num_pb: int = 1):
+    def _memory(self, blif_model: Model):
         self._elems["blif_model"] = ".subckt " + blif_model.name
         self._elems["class"] = "memory"
+
+        sp_required_inputs = {"address", "data_in", "write_en"}
+        sp_required_outputs = {"data_out"}
+        sp_required_clocks = {"clock"}
+        dp_required_inputs = {"address1", "address2", "data_in1", "data_in2", "write_en1", "write_en2"}
+        dp_required_outputs = {"data_out1", "data_out2"}
+        dp_required_clocks = {"clock"}
+
+        #check SP memory
+        is_sp = (sp_required_inputs.issubset(blif_model.inputs_class.keys()) 
+                 and sp_required_outputs.issubset(blif_model.outputs_class.keys()) 
+                 and sp_required_clocks.issubset(blif_model.clocks_class.keys()))
+
+        is_dp = (dp_required_inputs.issubset(blif_model.inputs_class.keys()) 
+                 and dp_required_outputs.issubset(blif_model.outputs_class.keys()) 
+                 and dp_required_clocks.issubset(blif_model.clocks_class.keys()))
+        
+        if not (is_sp or is_dp):
+            raise ValueError("Memory model must contain port classes for single port or dual port memory")
+        
+        for port_name, value in blif_model.inputs.items():
+            port_class = blif_model.inputs_class.get(port_name)
+            self._add_input(name=port_name, num_pins=value, port_class=port_class)
+        for port_name, value in blif_model.outputs.items():
+            port_class = blif_model.outputs_class.get(port_name)
+            self._add_output(name=port_name, num_pins=value, port_class=port_class)
+        for port_name, value in blif_model.clocks.items():
+            port_class = blif_model.clocks_class.get(port_name)
+            self._add_clock(name=port_name, num_pins=value, port_class=port_class)
 
     def _custom(self, blif_model: Model):
         self._elems["blif_model"] = ".subckt " + blif_model.name
